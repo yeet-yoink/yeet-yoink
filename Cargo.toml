@@ -15,6 +15,7 @@ clap = { version = "4.2.4", features = ["env"] }
 dotenvy = "0.15.7"
 futures = "0.3.28"
 tokio = { version = "1.28.0", features = ["full"] }
+tokio-stream = { version = "0.1.14", features = ["net"] }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter", "parking_lot", "tracing-log", "json"] }
 warp = "0.3.4"

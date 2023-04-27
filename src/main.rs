@@ -1,4 +1,7 @@
+use std::net::SocketAddr;
+use tokio::net::{TcpListener, UnixListener};
 use tokio::sync::broadcast;
+use tokio_stream::{wrappers::TcpListenerStream, wrappers::UnixListenerStream, Stream, StreamExt};
 use tracing::info;
 use warp::Filter;
 
@@ -10,6 +13,14 @@ async fn main() {
     dotenvy::dotenv().ok();
     let matches = commands::build_command().get_matches();
     logging::initialize_from_matches(&matches);
+
+    // Get the HTTP socket addresses to bind on.
+    let http_sockets: Vec<SocketAddr> = matches
+        .get_many("bind_http")
+        .into_iter()
+        .flatten()
+        .cloned()
+        .collect();
 
     // Provide a signal that can be used to shut down the server.
     let (shutdown_tx, mut shutdown_rx) = broadcast::channel::<()>(1);
@@ -27,14 +38,26 @@ async fn main() {
         .and(shutdown_filter)
         .and_then(shutdown);
 
-    let (_http_addr, http_warp) = warp::serve(hello.or(shutdown)).bind_with_graceful_shutdown(
-        ([127, 0, 0, 1], 2080),
-        async move {
-            shutdown_rx.recv().await.ok();
-        },
-    );
+    // Bind to all TCP sockets.
+    let streams = futures::future::join_all(http_sockets.into_iter().map(|addr| {
+        tokio::spawn(async move {
+            let listener = TcpListener::bind(addr).await.unwrap();
+            TcpListenerStream::new(listener)
+        })
+    }))
+    .await
+    .into_iter()
+    .flatten();
+    let streams = futures::stream::SelectAll::from_iter(streams);
 
-    http_warp.await;
+    // let listener = UnixListener::bind("/tmp/warp.sock").unwrap();
+    // let stream = UnixListenerStream::new(listener);
+
+    warp::serve(hello.or(shutdown))
+        .serve_incoming_with_graceful_shutdown(streams, async move {
+            shutdown_rx.recv().await.ok();
+        })
+        .await;
 
     info!("Bye. 👋");
 }
