@@ -42,8 +42,8 @@ async fn main() -> ExitCode {
 
     warp::serve(
         hello
-            .or(metrics::http_api::metrics_filter())
-            .or(health::http_api::health_filters())
+            .or(metrics::http_api::metrics_endpoint())
+            .or(health::http_api::health_endpoints())
             .or(shutdown),
     )
     .serve_incoming_with_graceful_shutdown(streams, async move {

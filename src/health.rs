@@ -19,8 +19,8 @@ impl Display for HealthState {
 
 pub mod http_api {
     use super::*;
+    use crate::metrics::http_api::with_call_metrics;
     use std::convert::Infallible;
-    use std::fmt::Display;
     use warp::http::Response;
     use warp::hyper::Body;
     use warp::{path, Filter, Rejection, Reply};
@@ -46,12 +46,12 @@ pub mod http_api {
     }
 
     /// Builds the health handlers.
-    pub fn health_filters() -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-        health_filter("health", HealthCheck::Full(HealthCheckFormat::Compact))
-            .or(health_filter("startupz", HealthCheck::Startup))
-            .or(health_filter("readyz", HealthCheck::Readiness))
-            .or(health_filter("livez", HealthCheck::Liveness))
-            .or(health_filter(
+    pub fn health_endpoints() -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+        health_endpoint("health", HealthCheck::Full(HealthCheckFormat::Compact))
+            .or(health_endpoint("startupz", HealthCheck::Startup))
+            .or(health_endpoint("readyz", HealthCheck::Readiness))
+            .or(health_endpoint("livez", HealthCheck::Liveness))
+            .or(health_endpoint(
                 "healthz",
                 HealthCheck::Full(HealthCheckFormat::Complex),
             ))
@@ -62,7 +62,7 @@ pub mod http_api {
     /// ## Arguments
     /// * `path` - The path on which to host the handler, e.g. `health`, `readyz`, etc.
     /// * `checks` - The type of health check to run on that path.
-    fn health_filter(
+    fn health_endpoint(
         path: &'static str,
         checks: HealthCheck,
     ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
@@ -70,6 +70,7 @@ pub mod http_api {
             .and(http_api::path(path))
             .and(path::end())
             .and(with_check_type(checks))
+            .and(with_call_metrics())
             .and_then(handle_health)
     }
 

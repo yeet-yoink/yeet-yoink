@@ -52,6 +52,9 @@ impl Metrics {
 /// HTTP based metrics.
 pub mod http {
     use super::*;
+    use prometheus_client::encoding::LabelValueEncoder;
+    use std::fmt::{Display, Error, Formatter, Write};
+    use warp::http::Method;
 
     lazy_static! {
         // Create a sample counter metric family utilizing the above custom label
@@ -62,16 +65,58 @@ pub mod http {
     #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
     struct Labels {
         // Use your own enum types to represent label values.
-        method: Method,
+        method: HttpMethod,
         // Or just a plain string.
         path: String,
     }
 
     /// The HTTP method to track.
-    #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelValue)]
-    pub enum Method {
+    #[derive(Clone, Debug, Hash, PartialEq, Eq)]
+    pub enum HttpMethod {
+        OPTIONS,
         GET,
+        POST,
         PUT,
+        DELETE,
+        HEAD,
+        PATCH,
+        UNHANDLED(Method),
+    }
+
+    impl EncodeLabelValue for HttpMethod {
+        fn encode(&self, encoder: &mut LabelValueEncoder) -> Result<(), Error> {
+            encoder.write_str(self.to_string().as_str())
+        }
+    }
+
+    impl Display for HttpMethod {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            match self {
+                HttpMethod::OPTIONS => write!(f, "OPTIONS"),
+                HttpMethod::GET => write!(f, "GET"),
+                HttpMethod::POST => write!(f, "POST"),
+                HttpMethod::PUT => write!(f, "PUT"),
+                HttpMethod::DELETE => write!(f, "DELETE"),
+                HttpMethod::HEAD => write!(f, "HEAD"),
+                HttpMethod::PATCH => write!(f, "PATCH"),
+                HttpMethod::UNHANDLED(other) => write!(f, "{other}"),
+            }
+        }
+    }
+
+    impl From<Method> for HttpMethod {
+        fn from(value: Method) -> Self {
+            match value {
+                Method::GET => Self::GET,
+                Method::OPTIONS => Self::OPTIONS,
+                Method::POST => Self::POST,
+                Method::PUT => Self::PUT,
+                Method::DELETE => Self::DELETE,
+                Method::HEAD => Self::HEAD,
+                Method::PATCH => Self::PATCH,
+                other => Self::UNHANDLED(other),
+            }
+        }
     }
 
     /// Register the `http_requests` metric family with the registry.
@@ -91,7 +136,7 @@ pub mod http {
 
     impl HttpMetrics {
         /// Tracks one call to the specified HTTP path and method.
-        pub fn track<P: AsRef<str>>(path: P, method: Method) {
+        pub fn track<P: AsRef<str>>(path: P, method: HttpMethod) {
             FAMILY
                 .get_or_create(&Labels {
                     method,
@@ -103,24 +148,36 @@ pub mod http {
 }
 
 pub mod http_api {
-    use crate::metrics::http::{HttpMetrics, Method};
+    use crate::metrics::http::HttpMetrics;
     use crate::metrics::Metrics;
-    use warp::{Filter, Rejection, Reply};
+    use std::convert::Infallible;
+    use warp::path::FullPath;
+    use warp::{http, method, path, Filter, Rejection, Reply};
 
     /// Performs a health check.
     ///
     /// ```http
     /// GET /health
     /// ```
-    pub fn metrics_filter() -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+    pub fn metrics_endpoint() -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
         warp::get()
             .and(warp::path("metrics"))
-            .and(warp::path::end())
-            .and_then(handle_metrics)
+            .and(path::end())
+            .and(with_call_metrics())
+            .and_then(render_metrics)
     }
 
-    async fn handle_metrics() -> Result<impl Reply, Rejection> {
-        HttpMetrics::track("metrics", Method::GET);
+    pub fn with_call_metrics() -> impl Filter<Extract = (), Error = Infallible> + Clone {
+        warp::any()
+            .and(path::full())
+            .and(method())
+            .map(|path: FullPath, method: http::Method| {
+                HttpMetrics::track(path.as_str(), method.into())
+            })
+            .untuple_one()
+    }
+
+    async fn render_metrics() -> Result<impl Reply, Rejection> {
         let metrics = Metrics::get().encode();
         Ok(metrics)
     }
