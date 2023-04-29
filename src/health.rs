@@ -30,22 +30,23 @@ pub enum HealthState {
 }
 
 /// Builds the health handlers.
-pub fn health_handlers() -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    health_handler("health", HealthCheck::Full(HealthCheckFormat::Compact))
-        .or(health_handler("startupz", HealthCheck::Startup))
-        .or(health_handler("readyz", HealthCheck::Readiness))
-        .or(health_handler("livez", HealthCheck::Liveness))
-        .or(health_handler(
+pub fn health_filters() -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+    health_filter("health", HealthCheck::Full(HealthCheckFormat::Compact))
+        .or(health_filter("startupz", HealthCheck::Startup))
+        .or(health_filter("readyz", HealthCheck::Readiness))
+        .or(health_filter("livez", HealthCheck::Liveness))
+        .or(health_filter(
             "healthz",
             HealthCheck::Full(HealthCheckFormat::Complex),
         ))
 }
+
 /// Builds a health handler.
 ///
 /// ## Arguments
 /// * `path` - The path on which to host the handler, e.g. `health`, `readyz`, etc.
 /// * `checks` - The type of health check to run on that path.
-pub fn health_handler(
+fn health_filter(
     path: &'static str,
     checks: HealthCheck,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
@@ -53,7 +54,7 @@ pub fn health_handler(
         .and(warp::path(path))
         .and(path::end())
         .and(with_check_type(checks))
-        .and_then(health)
+        .and_then(handle_health)
 }
 
 /// Performs a health check.
@@ -61,7 +62,8 @@ pub fn health_handler(
 /// ```http
 /// GET /health
 /// ```
-async fn health(checks: HealthCheck) -> Result<impl Reply, Rejection> {
+async fn handle_health(checks: HealthCheck) -> Result<impl Reply, Rejection> {
+    // TODO: Get the path, track the metric.
     match checks {
         HealthCheck::Startup => Ok(HealthState::Healthy),
         HealthCheck::Readiness => Ok(HealthState::Healthy),
