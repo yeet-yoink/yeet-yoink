@@ -102,7 +102,7 @@ pub mod http {
     }
 }
 
-pub mod warp {
+pub mod http_api {
     use crate::metrics::http::{HttpMetrics, Method};
     use crate::metrics::Metrics;
     use warp::{Filter, Rejection, Reply};
