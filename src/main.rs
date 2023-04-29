@@ -1,4 +1,5 @@
 use crate::bind::bind_tcp_sockets;
+use crate::health::health_handlers;
 use std::process::ExitCode;
 use tokio::sync::broadcast;
 use tracing::info;
@@ -6,6 +7,7 @@ use warp::Filter;
 
 mod bind;
 mod commands;
+mod health;
 mod logging;
 
 #[tokio::main]
@@ -38,7 +40,7 @@ async fn main() -> ExitCode {
         }
     };
 
-    warp::serve(hello.or(shutdown))
+    warp::serve(hello.or(health_handlers()).or(shutdown))
         .serve_incoming_with_graceful_shutdown(streams, async move {
             shutdown_rx.recv().await.ok();
         })

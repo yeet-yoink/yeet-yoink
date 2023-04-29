@@ -5,7 +5,7 @@ use futures::stream::SelectAll;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
-use tracing::error;
+use tracing::{error, info};
 
 /// Binds TCP sockets to the values specified on the command-line.
 ///
@@ -34,6 +34,8 @@ pub async fn bind_tcp_sockets(
             );
             BindError::CantBind(addr, e)
         })?;
+
+        info!("Binding to {addr}", addr = addr);
         streams.push(TcpListenerStream::new(listener));
     }
 
