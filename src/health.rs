@@ -19,7 +19,6 @@ impl Display for HealthState {
 
 pub mod http_api {
     use super::*;
-    use crate::metrics::http_api::with_call_metrics;
     use std::convert::Infallible;
     use warp::http::Response;
     use warp::hyper::Body;

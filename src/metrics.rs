@@ -1,10 +1,6 @@
 use lazy_static::lazy_static;
 use prometheus_client::encoding::text::encode;
-use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
-use prometheus_client::metrics::counter::{Atomic, Counter};
-use prometheus_client::metrics::family::Family;
 use prometheus_client::registry::Registry;
-use std::io::Write;
 
 lazy_static! {
     // Create a metric registry.
@@ -53,13 +49,21 @@ impl Metrics {
 pub mod http {
     use super::*;
     use prometheus_client::encoding::LabelValueEncoder;
+    use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
+    use prometheus_client::metrics::counter::Counter;
+    use prometheus_client::metrics::family::Family;
+    use prometheus_client::metrics::gauge::Gauge;
+    use prometheus_client::registry::{Registry, Unit};
     use std::fmt::{Display, Error, Formatter, Write};
+    use std::time::Duration;
     use warp::http::Method;
 
     lazy_static! {
         // Create a sample counter metric family utilizing the above custom label
         // type, representing the number of HTTP requests received.
-        static ref FAMILY: Family<Labels, Counter> = Family::default();
+        static ref TRACK_ENDPOINT: Family<Labels, Counter> = Family::default();
+        static ref TRACK_DURATION: Family<Labels, Counter<f64>> = Family::default();
+        static ref TRACK_IN_FLIGHT: Family<InFlightLabels, Gauge> = Family::default();
     }
 
     #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
@@ -67,6 +71,13 @@ pub mod http {
         // Use your own enum types to represent label values.
         method: HttpMethod,
         // Or just a plain string.
+        path: String,
+        /// The HTTP status code.
+        status: u16,
+    }
+
+    #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+    struct InFlightLabels {
         path: String,
     }
 
@@ -104,18 +115,24 @@ pub mod http {
         }
     }
 
+    impl From<&Method> for HttpMethod {
+        fn from(value: &Method) -> Self {
+            match value {
+                &Method::GET => Self::GET,
+                &Method::OPTIONS => Self::OPTIONS,
+                &Method::POST => Self::POST,
+                &Method::PUT => Self::PUT,
+                &Method::DELETE => Self::DELETE,
+                &Method::HEAD => Self::HEAD,
+                &Method::PATCH => Self::PATCH,
+                other => Self::UNHANDLED(other.clone()),
+            }
+        }
+    }
+
     impl From<Method> for HttpMethod {
         fn from(value: Method) -> Self {
-            match value {
-                Method::GET => Self::GET,
-                Method::OPTIONS => Self::OPTIONS,
-                Method::POST => Self::POST,
-                Method::PUT => Self::PUT,
-                Method::DELETE => Self::DELETE,
-                Method::HEAD => Self::HEAD,
-                Method::PATCH => Self::PATCH,
-                other => Self::UNHANDLED(other),
-            }
+            HttpMethod::from(&value)
         }
     }
 
@@ -126,7 +143,20 @@ pub mod http {
             "http_requests",
             // And the metric help text.
             "Number of HTTP requests received",
-            FAMILY.clone(),
+            TRACK_ENDPOINT.clone(),
+        );
+
+        registry.register_with_unit(
+            "http_duration",
+            "Duration of HTTP requests executed",
+            Unit::Seconds,
+            TRACK_DURATION.clone(),
+        );
+
+        registry.register(
+            "http_requests_in_flight",
+            "Number of requests that are currently in flight",
+            TRACK_IN_FLIGHT.clone(),
         );
     }
 
@@ -136,13 +166,38 @@ pub mod http {
 
     impl HttpMetrics {
         /// Tracks one call to the specified HTTP path and method.
-        pub fn track<P: AsRef<str>>(path: P, method: HttpMethod) {
-            FAMILY
+        pub fn track<P: AsRef<str>>(path: P, method: HttpMethod, status: u16, elapsed: Duration) {
+            TRACK_ENDPOINT
+                .get_or_create(&Labels {
+                    method: method.clone(),
+                    path: path.as_ref().to_string(),
+                    status,
+                })
+                .inc();
+
+            TRACK_DURATION
                 .get_or_create(&Labels {
                     method,
                     path: path.as_ref().to_string(),
+                    status,
+                })
+                .inc_by(elapsed.as_secs_f64());
+        }
+
+        pub fn inc_in_flight<P: AsRef<str>>(path: P) {
+            TRACK_IN_FLIGHT
+                .get_or_create(&InFlightLabels {
+                    path: path.as_ref().to_string(),
                 })
                 .inc();
+        }
+
+        pub fn dec_in_flight<P: AsRef<str>>(path: P) {
+            TRACK_IN_FLIGHT
+                .get_or_create(&InFlightLabels {
+                    path: path.as_ref().to_string(),
+                })
+                .dec();
         }
     }
 }
@@ -151,8 +206,9 @@ pub mod http_api {
     use crate::metrics::http::HttpMetrics;
     use crate::metrics::Metrics;
     use std::convert::Infallible;
+    use warp::log::{Info, Log};
     use warp::path::FullPath;
-    use warp::{http, method, path, Filter, Rejection, Reply};
+    use warp::{path, Filter, Rejection, Reply};
 
     /// Performs a health check.
     ///
@@ -166,14 +222,25 @@ pub mod http_api {
             .and_then(render_metrics)
     }
 
-    pub fn with_call_metrics() -> impl Filter<Extract = (), Error = Infallible> + Clone {
+    pub fn with_start_call_metrics() -> impl Filter<Extract = (), Error = Infallible> + Clone {
         warp::any()
             .and(path::full())
-            .and(method())
-            .map(|path: FullPath, method: http::Method| {
-                HttpMetrics::track(path.as_str(), method.into())
+            .map(|path: FullPath| {
+                HttpMetrics::inc_in_flight(path.as_str());
             })
             .untuple_one()
+    }
+
+    pub fn with_end_call_metrics() -> Log<fn(Info<'_>)> {
+        warp::log::custom(|info| {
+            HttpMetrics::track(
+                info.path(),
+                info.method().into(),
+                info.status().as_u16(),
+                info.elapsed(),
+            );
+            HttpMetrics::dec_in_flight(info.path());
+        })
     }
 
     async fn render_metrics() -> Result<impl Reply, Rejection> {
