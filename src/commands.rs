@@ -1,5 +1,7 @@
 use crate::logging::LoggingStyle;
 use clap::{Arg, Command};
+use std::net::SocketAddr;
+use std::str::FromStr;
 
 pub fn build_command() -> Command {
     let command = Command::new("Yeet/Yoink")
@@ -16,6 +18,19 @@ pub fn build_command() -> Command {
                 .num_args(1)
                 .value_parser(logging_style)
                 .help_heading("Logging"),
+        )
+        .arg(
+            Arg::new("bind_http")
+                .long("http")
+                .env("APP_SERVER_BIND_HTTP")
+                .value_name("SOCKET")
+                .default_value("127.0.0.1:8080")
+                .help("The socket to bind insecure HTTP on")
+                .num_args(1..)
+                .allow_negative_numbers(false)
+                .action(clap::ArgAction::Append)
+                .value_parser(socket_addr)
+                .help_heading("Server"),
         );
     command
 }
@@ -27,4 +42,8 @@ fn logging_style(s: &str) -> Result<LoggingStyle, String> {
         "json" => Ok(LoggingStyle::Json),
         _ => Err(String::from("Either simple or json must be specified")),
     }
+}
+
+fn socket_addr(s: &str) -> Result<SocketAddr, String> {
+    SocketAddr::from_str(s).map_err(|e| format!("{e}"))
 }
