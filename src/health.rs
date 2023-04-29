@@ -70,7 +70,6 @@ pub mod http_api {
             .and(http_api::path(path))
             .and(path::end())
             .and(with_check_type(checks))
-            .and(with_call_metrics())
             .and_then(handle_health)
     }
 

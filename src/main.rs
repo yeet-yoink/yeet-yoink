@@ -1,4 +1,5 @@
 use crate::bind::bind_tcp_sockets;
+use crate::metrics::http_api::with_call_metrics;
 use std::process::ExitCode;
 use tokio::sync::broadcast;
 use tracing::info;
@@ -44,7 +45,8 @@ async fn main() -> ExitCode {
         hello
             .or(metrics::http_api::metrics_endpoint())
             .or(health::http_api::health_endpoints())
-            .or(shutdown),
+            .or(shutdown)
+            .and(with_call_metrics()),
     )
     .serve_incoming_with_graceful_shutdown(streams, async move {
         shutdown_rx.recv().await.ok();

@@ -163,7 +163,6 @@ pub mod http_api {
         warp::get()
             .and(warp::path("metrics"))
             .and(path::end())
-            .and(with_call_metrics())
             .and_then(render_metrics)
     }
 
