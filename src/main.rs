@@ -84,7 +84,7 @@ async fn hello(name: String) -> Result<impl warp::Reply, warp::Rejection> {
 /// ```
 async fn slow() -> Result<impl warp::Reply, warp::Rejection> {
     tokio::time::sleep(Duration::from_secs(5)).await;
-    Ok(Response::new(Body::from("That was slow.")))
+    Ok(format!("That was slow."))
 }
 
 /// Initiates a graceful shutdown.
