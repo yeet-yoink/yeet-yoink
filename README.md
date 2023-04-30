@@ -5,6 +5,10 @@ This is meant to simplify cluster-local file sharing with configurable persisten
 
 ## HTTP API
 
+### Metrics
+
+* `/metrics` - Produces metrics in Prometheus/OpenMetrics format.
+
 ### Health Checks
 
 * `/startupz` - Meant for Kubernetes startup probes. 
