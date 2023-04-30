@@ -1,12 +1,18 @@
 use crate::bind::bind_tcp_sockets;
 use crate::metrics::http_api::{with_end_call_metrics, with_start_call_metrics};
+use hyper::Server;
+use std::convert::Infallible;
+use std::future::{ready, Ready};
+use std::net::{SocketAddr, TcpListener};
 use std::process::ExitCode;
+use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::sync::broadcast;
-use tracing::info;
-use warp::http::Response;
+use tracing::{info, warn};
+use warp::http::{Request, Response};
+use warp::hyper::service::{make_service_fn, Service};
 use warp::hyper::Body;
-use warp::Filter;
+use warp::{Filter, Rejection, Reply};
 
 mod bind;
 mod commands;
@@ -22,23 +28,19 @@ async fn main() -> ExitCode {
 
     // Provide a signal that can be used to shut down the server.
     let (shutdown_tx, mut shutdown_rx) = broadcast::channel::<()>(1);
-    let shutdown_filter = warp::any().map(move || shutdown_tx.clone());
 
     info!("Hi. 👋");
 
     // GET /hello/warp => 200 OK with body "Hello, warp!"
     let hello = warp::path!("hello" / String).and_then(hello);
 
+    // GET /hello/ => 200 OK with body "Hello World!"
+    // let hello_world = warp::path!("hello").and_then(Hello);
+
     // GET /slow => a slow requests
     let slow = warp::path!("slow").and_then(slow);
 
-    // POST /stop to shut down the server.
-    let shutdown = warp::post()
-        .and(warp::path("stop"))
-        .and(warp::path::end())
-        .and(shutdown_filter)
-        .and_then(shutdown);
-
+    /*
     let streams = match bind_tcp_sockets(&matches).await {
         Ok(s) => s,
         Err(_e) => {
@@ -46,11 +48,52 @@ async fn main() -> ExitCode {
             return ExitCode::from(exitcode::NOPERM as u8);
         }
     };
+     */
 
+    /*
+    let filter = with_start_call_metrics()
+        .and(
+            hello
+                // .or(hello_world)
+                .or(slow)
+                .or(metrics::http_api::metrics_endpoint())
+                .or(health::http_api::health_endpoints())
+                .or(shutdown),
+        )
+        // TODO: If the call (e.g. of `slow`) is cancelled, this is never reached.
+        .with(with_end_call_metrics());
+     */
+
+    // Typical hyper setup...
+    let make_svc = make_service_fn(move |_| {
+        let tx = shutdown_tx.clone();
+        async move {
+            Ok::<_, Infallible>(warp::service(
+                hello
+                    // .or(hello_world)
+                    .or(slow)
+                    .or(metrics::http_api::metrics_endpoint())
+                    .or(health::http_api::health_endpoints())
+                    .or(shutdown_route(tx)),
+            ))
+        }
+    });
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
+    let listener = TcpListener::bind(addr).unwrap();
+
+    Server::from_tcp(listener)
+        .unwrap()
+        .serve(make_svc)
+        .await
+        .unwrap();
+
+    /*
     warp::serve(
         with_start_call_metrics()
             .and(
                 hello
+                    // .or(hello_world)
                     .or(slow)
                     .or(metrics::http_api::metrics_endpoint())
                     .or(health::http_api::health_endpoints())
@@ -63,6 +106,7 @@ async fn main() -> ExitCode {
         shutdown_rx.recv().await.ok();
     })
     .await;
+    */
 
     info!("Bye. 👋");
     ExitCode::SUCCESS
@@ -73,7 +117,7 @@ async fn main() -> ExitCode {
 /// ```http
 /// GET /hello/name
 /// ```
-async fn hello(name: String) -> Result<impl warp::Reply, warp::Rejection> {
+async fn hello(name: String) -> Result<impl Reply, Rejection> {
     Ok(format!("Hello, {}!", name))
 }
 
@@ -92,7 +136,39 @@ async fn slow() -> Result<impl warp::Reply, warp::Rejection> {
 /// ```http
 /// POST /stop
 /// ```
-async fn shutdown(tx: broadcast::Sender<()>) -> Result<impl warp::Reply, warp::Rejection> {
+async fn shutdown(tx: broadcast::Sender<()>) -> Result<impl warp::Reply, Rejection> {
+    warn!("Initiating shutdown from API call");
     tx.send(()).ok();
     Ok(warp::reply::reply())
+}
+
+/// Builds the route for the [`shutdown`] handler.
+fn shutdown_route(
+    tx: broadcast::Sender<()>,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+    let shutdown_filter = warp::any().map(move || tx.clone());
+
+    // POST /stop to shut down the server.
+    warp::post()
+        .and(warp::path("stop"))
+        .and(warp::path::end())
+        .and(shutdown_filter)
+        .and_then(shutdown)
+}
+
+struct Hello;
+
+impl Service<Request<Body>> for Hello {
+    type Response = Response<Body>;
+    type Error = Infallible;
+    type Future = Ready<Result<Self::Response, Self::Error>>;
+
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        // We produce our result right away.
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, _req: Request<Body>) -> Self::Future {
+        ready(Ok(Response::new(Body::from("Hello world"))))
+    }
 }

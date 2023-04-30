@@ -1468,6 +1468,7 @@ dependencies = [
  "dotenvy",
  "exitcode",
  "futures",
+ "hyper",
  "lazy_static",
  "prometheus-client",
  "thiserror",

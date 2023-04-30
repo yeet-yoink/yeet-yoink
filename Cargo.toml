@@ -16,6 +16,7 @@ clap = { version = "4.2.4", features = ["env"] }
 dotenvy = "0.15.7"
 exitcode = "1.1.2"
 futures = "0.3.28"
+hyper = { version = "0.14.26", features = ["http1", "http2", "server", "h2", "stream"] }
 lazy_static = "1.4.0"
 prometheus-client = "0.20.0"
 thiserror = "1.0.40"
