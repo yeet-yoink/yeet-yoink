@@ -16,6 +16,8 @@ clap = { version = "4.2.4", features = ["env"] }
 dotenvy = "0.15.7"
 exitcode = "1.1.2"
 futures = "0.3.28"
+lazy_static = "1.4.0"
+prometheus-client = "0.20.0"
 thiserror = "1.0.40"
 tokio = { version = "1.28.0", features = ["full"] }
 tokio-stream = { version = "0.1.14", features = ["net"] }
