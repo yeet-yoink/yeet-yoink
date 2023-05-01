@@ -205,7 +205,6 @@ pub mod http {
 pub mod http_api {
     use crate::metrics::http::HttpMetrics;
     use crate::metrics::Metrics;
-    use futures::prelude::*;
     use hyper::service::Service;
     use hyper::Request;
     use pin_project::pin_project;
@@ -214,6 +213,7 @@ pub mod http_api {
     use std::pin::Pin;
     use std::task::{Context, Poll};
     use tower::Layer;
+    use tracing::debug;
     use warp::log::{Info, Log};
     use warp::path::FullPath;
     use warp::{path, Filter, Rejection, Reply};
@@ -292,24 +292,19 @@ pub mod http_api {
         }
 
         fn call(&mut self, request: Request<B>) -> Self::Future {
-            HttpCallMetricsFuture {
-                future: self.inner.call(request),
-            }
-
-            /*
-            let mut inner = self.inner.clone(); // returned future must be 'static
+            // TODO: Wrap into HttpCallMetricsFuture creation.
             let method = request.method().clone();
             let path = request.uri().path().to_string();
-
-            let guard = HttpCallMetricTracker::track(path.clone());
             debug!("Started processing request for {method} {path}");
 
-            inner.call(request).map(move |response| {
-                debug!("Finished processing request for {method} {path}");
-                drop(guard);
-                response
-            })
-            */
+            let tracker = HttpCallMetricTracker::track(path.clone());
+
+            HttpCallMetricsFuture {
+                future: self.inner.call(request),
+                method,
+                path,
+                tracker,
+            }
         }
     }
 
@@ -317,6 +312,9 @@ pub mod http_api {
     pub struct HttpCallMetricsFuture<F> {
         #[pin]
         future: F,
+        method: hyper::Method,
+        path: String,
+        tracker: HttpCallMetricTracker,
     }
 
     impl<F> Future for HttpCallMetricsFuture<F>
@@ -327,7 +325,17 @@ pub mod http_api {
 
         fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
             let this = self.project();
-            this.future.poll(cx)
+            let res = match this.future.poll(cx) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(output) => output,
+            };
+
+            debug!(
+                "Finished processing request for {method} {path}",
+                method = this.method,
+                path = this.path
+            );
+            Poll::Ready(res)
         }
     }
 
