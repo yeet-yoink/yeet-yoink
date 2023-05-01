@@ -210,6 +210,7 @@ pub mod http_api {
     use std::convert::Infallible;
     use std::task::{Context, Poll};
     use tower::Layer;
+    use tracing::debug;
     use warp::log::{Info, Log};
     use warp::path::FullPath;
     use warp::{path, Filter, Rejection, Reply};
@@ -290,8 +291,14 @@ pub mod http_api {
         fn call(&mut self, request: Request<B>) -> Self::Future {
             let mut inner = self.inner.clone(); // returned future must be 'static
             Box::pin(async move {
-                let _guard = HttpCallMetricTracker::track(request.uri().path().to_string());
-                inner.call(request).await
+                let method = request.method().clone();
+                let path = request.uri().path().to_string();
+
+                let _guard = HttpCallMetricTracker::track(path.clone());
+                debug!("Started processing request for {method} {path}");
+                let result = inner.call(request).await;
+                debug!("Finished processing request for {method} {path}");
+                result
             })
         }
     }
