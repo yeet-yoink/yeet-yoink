@@ -211,6 +211,8 @@ pub mod http_api {
     use std::future::Future;
     use std::pin::Pin;
     use std::task::{Context, Poll};
+    use std::time::Duration;
+    use tokio::time::Instant;
     use tracing::debug;
     use warp::log::{Info, Log};
     use warp::{path, Filter, Rejection, Reply};
@@ -281,7 +283,10 @@ pub mod http_api {
         fn call(&mut self, request: Request<B>) -> Self::Future {
             let method = request.method().clone();
             let path = request.uri().path().to_string();
-            HttpCallMetricsFuture::new(self.inner.call(request), method, path)
+
+            // We start tracking request time before the first call to the future.
+            let start = Instant::now();
+            HttpCallMetricsFuture::new(self.inner.call(request), method, path, start)
         }
     }
 
@@ -293,8 +298,8 @@ pub mod http_api {
     }
 
     impl<F> HttpCallMetricsFuture<F> {
-        fn new(future: F, method: hyper::Method, path: String) -> Self {
-            let tracker = HttpCallMetricTracker::track(method, path);
+        fn new(future: F, method: hyper::Method, path: String, start: Instant) -> Self {
+            let tracker = HttpCallMetricTracker::track(method, path, start);
             Self { future, tracker }
         }
     }
@@ -321,13 +326,22 @@ pub mod http_api {
     struct HttpCallMetricTracker {
         method: hyper::Method,
         path: String,
+        start: Instant,
     }
 
     impl HttpCallMetricTracker {
-        pub fn track(method: hyper::Method, path: String) -> Self {
+        pub fn track(method: hyper::Method, path: String, start: Instant) -> Self {
             debug!("Started processing request for {method} {path}");
             HttpMetrics::inc_in_flight(path.as_str());
-            Self { method, path }
+            Self {
+                method,
+                path,
+                start,
+            }
+        }
+
+        fn duration(&self) -> Duration {
+            Instant::now() - self.start
         }
     }
 
@@ -335,9 +349,10 @@ pub mod http_api {
     impl Drop for HttpCallMetricTracker {
         fn drop(&mut self) {
             debug!(
-                "Finished processing request for {method} {path}",
+                "Finished processing request for {method} {path} in {duration:?}",
                 method = self.method,
-                path = self.path
+                path = self.path,
+                duration = self.duration()
             );
             HttpMetrics::dec_in_flight(self.path.as_str());
         }
