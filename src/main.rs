@@ -8,6 +8,7 @@ use std::process::ExitCode;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::sync::broadcast;
+use tower::ServiceBuilder;
 use tracing::{error, info, warn};
 use warp::http::{Request, Response};
 use warp::hyper::service::{make_service_fn, Service};
@@ -65,24 +66,30 @@ async fn main() -> ExitCode {
      */
 
     // Typical hyper setup...
-    let make_svc = make_service_fn(move |_| {
+    let make_svc = make_service_fn(|_conn| {
         let tx = shutdown_tx.clone();
+
         async move {
-            Ok::<_, Infallible>(warp::service(
+            let svc = warp::service(
                 hello
                     // .or(hello_world)
                     .or(slow)
                     .or(metrics::http_api::metrics_endpoint())
                     .or(health::http_api::health_endpoints())
                     .or(shutdown_route(tx)),
-            ))
+            );
+
+            let svc = metrics::http_api::HttpCallMetrics::new(svc);
+            Ok::<_, Infallible>(svc)
         }
     });
+
+    let builder = ServiceBuilder::new().service(make_svc);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
     let listener = TcpListener::bind(addr).unwrap();
 
-    let server = Server::from_tcp(listener).unwrap().serve(make_svc);
+    let server = Server::from_tcp(listener).unwrap().serve(builder);
 
     let server = server.with_graceful_shutdown(async move {
         shutdown_rx.recv().await.ok();

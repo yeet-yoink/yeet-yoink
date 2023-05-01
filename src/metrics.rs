@@ -206,8 +206,10 @@ pub mod http_api {
     use crate::metrics::http::HttpMetrics;
     use crate::metrics::Metrics;
     use hyper::service::Service;
+    use hyper::Request;
     use std::convert::Infallible;
     use std::task::{Context, Poll};
+    use tower::Layer;
     use warp::log::{Info, Log};
     use warp::path::FullPath;
     use warp::{path, Filter, Rejection, Reply};
@@ -250,6 +252,7 @@ pub mod http_api {
         Ok(metrics)
     }
 
+    /// A middleware for call metrics.
     pub struct HttpCallMetrics<T> {
         inner: T,
     }
@@ -259,26 +262,11 @@ pub mod http_api {
         pub fn new(inner: T) -> Self {
             Self { inner }
         }
-
-        /// Get a reference to the inner service
-        pub fn get_ref(&self) -> &T {
-            &self.inner
-        }
-
-        /// Get a mutable reference to the inner service
-        pub fn get_mut(&mut self) -> &mut T {
-            &mut self.inner
-        }
-
-        /// Consume `self`, returning the inner service
-        pub fn into_inner(self) -> T {
-            self.inner
-        }
     }
 
-    impl<S, Request> Service<Request> for HttpCallMetrics<S>
+    impl<S, B> Service<Request<B>> for HttpCallMetrics<S>
     where
-        S: Service<Request>,
+        S: Service<Request<B>>,
     {
         type Response = S::Response;
         type Error = S::Error;
@@ -288,8 +276,37 @@ pub mod http_api {
             self.inner.poll_ready(cx)
         }
 
-        fn call(&mut self, request: Request) -> Self::Future {
+        fn call(&mut self, request: Request<B>) -> Self::Future {
+            // TODO: This doesn't work because `call` isn't `await'ed, therefore we drop before actually doing the work.
+            let _guard = HttpCallMetricTracker::track(request.uri().path().to_string());
             self.inner.call(request)
+        }
+    }
+
+    impl<S> Layer<S> for HttpCallMetrics<S> {
+        type Service = HttpCallMetrics<S>;
+
+        fn layer(&self, inner: S) -> Self::Service {
+            HttpCallMetrics::new(inner)
+        }
+    }
+
+    /// A metrics tracker. Will call [`HttpMetrics::inc_in_flight`]
+    /// on construction and [`HttpMetrics::dec_in_flight`] on drop.
+    struct HttpCallMetricTracker {
+        path: String,
+    }
+
+    impl HttpCallMetricTracker {
+        pub fn track(path: String) -> Self {
+            HttpMetrics::inc_in_flight(path.as_str());
+            Self { path }
+        }
+    }
+
+    impl Drop for HttpCallMetricTracker {
+        fn drop(&mut self) {
+            HttpMetrics::dec_in_flight(self.path.as_str());
         }
     }
 }
