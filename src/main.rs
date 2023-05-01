@@ -8,7 +8,7 @@ use std::process::ExitCode;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::sync::broadcast;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use warp::http::{Request, Response};
 use warp::hyper::service::{make_service_fn, Service};
 use warp::hyper::Body;
@@ -82,34 +82,22 @@ async fn main() -> ExitCode {
     let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
     let listener = TcpListener::bind(addr).unwrap();
 
-    Server::from_tcp(listener)
-        .unwrap()
-        .serve(make_svc)
-        .await
-        .unwrap();
+    let server = Server::from_tcp(listener).unwrap().serve(make_svc);
 
-    /*
-    warp::serve(
-        with_start_call_metrics()
-            .and(
-                hello
-                    // .or(hello_world)
-                    .or(slow)
-                    .or(metrics::http_api::metrics_endpoint())
-                    .or(health::http_api::health_endpoints())
-                    .or(shutdown),
-            )
-            // TODO: If the call (e.g. of `slow`) is cancelled, this is never reached.
-            .with(with_end_call_metrics()),
-    )
-    .serve_incoming_with_graceful_shutdown(streams, async move {
+    let server = server.with_graceful_shutdown(async move {
         shutdown_rx.recv().await.ok();
-    })
-    .await;
-    */
+    });
 
-    info!("Bye. 👋");
-    ExitCode::SUCCESS
+    match server.await {
+        Ok(()) => {
+            info!("Bye. 👋");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            error!("Server error: {}", e);
+            ExitCode::FAILURE
+        }
+    }
 }
 
 /// Responds with the caller's name.
@@ -126,7 +114,7 @@ async fn hello(name: String) -> Result<impl Reply, Rejection> {
 /// ```http
 /// GET /hello/name
 /// ```
-async fn slow() -> Result<impl warp::Reply, warp::Rejection> {
+async fn slow() -> Result<impl Reply, Rejection> {
     tokio::time::sleep(Duration::from_secs(5)).await;
     Ok(format!("That was slow."))
 }
@@ -136,7 +124,7 @@ async fn slow() -> Result<impl warp::Reply, warp::Rejection> {
 /// ```http
 /// POST /stop
 /// ```
-async fn shutdown(tx: broadcast::Sender<()>) -> Result<impl warp::Reply, Rejection> {
+async fn shutdown(tx: broadcast::Sender<()>) -> Result<impl Reply, Rejection> {
     warn!("Initiating shutdown from API call");
     tx.send(()).ok();
     Ok(warp::reply::reply())
