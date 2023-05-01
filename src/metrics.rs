@@ -212,7 +212,6 @@ pub mod http_api {
     use std::future::Future;
     use std::pin::Pin;
     use std::task::{Context, Poll};
-    use tower::Layer;
     use tracing::debug;
     use warp::log::{Info, Log};
     use warp::path::FullPath;
@@ -336,14 +335,6 @@ pub mod http_api {
                 path = this.path
             );
             Poll::Ready(res)
-        }
-    }
-
-    impl<S> Layer<S> for HttpCallMetrics<S> {
-        type Service = HttpCallMetrics<S>;
-
-        fn layer(&self, inner: S) -> Self::Service {
-            HttpCallMetrics::new(inner)
         }
     }
 
