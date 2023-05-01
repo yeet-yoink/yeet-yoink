@@ -1,5 +1,5 @@
 use crate::bind::bind_tcp_sockets;
-use crate::metrics::http_api::{with_end_call_metrics, with_start_call_metrics};
+use crate::metrics::http_api::with_end_call_metrics;
 use hyper::Server;
 use std::convert::Infallible;
 use std::future::{ready, Ready};
@@ -71,12 +71,16 @@ async fn main() -> ExitCode {
 
         async move {
             let svc = warp::service(
-                hello
-                    // .or(hello_world)
-                    .or(slow)
-                    .or(metrics::http_api::metrics_endpoint())
-                    .or(health::http_api::health_endpoints())
-                    .or(shutdown_route(tx)),
+                warp::any()
+                    .and(
+                        hello
+                            .or(slow)
+                            .or(metrics::http_api::metrics_endpoint())
+                            .or(health::http_api::health_endpoints())
+                            .or(shutdown_route(tx)),
+                    )
+                    // TODO: If the call (e.g. of `slow`) is cancelled, this is never reached.
+                    .with(with_end_call_metrics()),
             );
 
             let svc = metrics::http_api::HttpCallMetrics::new(svc);

@@ -208,13 +208,11 @@ pub mod http_api {
     use hyper::service::Service;
     use hyper::Request;
     use pin_project::pin_project;
-    use std::convert::Infallible;
     use std::future::Future;
     use std::pin::Pin;
     use std::task::{Context, Poll};
     use tracing::debug;
     use warp::log::{Info, Log};
-    use warp::path::FullPath;
     use warp::{path, Filter, Rejection, Reply};
 
     /// Performs a health check.
@@ -229,15 +227,6 @@ pub mod http_api {
             .and_then(render_metrics)
     }
 
-    pub fn with_start_call_metrics() -> impl Filter<Extract = (), Error = Infallible> + Clone {
-        warp::any()
-            .and(path::full())
-            .map(|path: FullPath| {
-                HttpMetrics::inc_in_flight(path.as_str());
-            })
-            .untuple_one()
-    }
-
     pub fn with_end_call_metrics() -> Log<fn(Info<'_>)> {
         warp::log::custom(|info| {
             HttpMetrics::track(
@@ -246,7 +235,6 @@ pub mod http_api {
                 info.status().as_u16(),
                 info.elapsed(),
             );
-            HttpMetrics::dec_in_flight(info.path());
         })
     }
 
