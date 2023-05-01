@@ -314,7 +314,13 @@ pub mod http_api {
             // Metrics tracking is done in the `HttpCallMetricTracker` type which is
             // finalizing when our future is dropped.
             let this = self.project();
-            this.future.poll(cx)
+            let response = match this.future.poll(cx) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(reply) => reply,
+            };
+
+            // TODO: Track HTTP status code here.
+            Poll::Ready(response)
         }
     }
 
