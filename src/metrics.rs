@@ -270,16 +270,17 @@ pub mod http_api {
     {
         type Response = S::Response;
         type Error = S::Error;
-        type Future = S::Future;
+        type Future = futures::future::BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
         fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             self.inner.poll_ready(cx)
         }
 
         fn call(&mut self, request: Request<B>) -> Self::Future {
-            // TODO: This doesn't work because `call` isn't `await'ed, therefore we drop before actually doing the work.
-            let _guard = HttpCallMetricTracker::track(request.uri().path().to_string());
-            self.inner.call(request)
+            Box::pin(async move {
+                let _guard = HttpCallMetricTracker::track(request.uri().path().to_string());
+                self.inner.call(request).await
+            })
         }
     }
 
