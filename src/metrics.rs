@@ -208,6 +208,7 @@ pub mod http_api {
     use futures::prelude::*;
     use hyper::service::Service;
     use hyper::Request;
+    use pin_project::pin_project;
     use std::convert::Infallible;
     use std::future::Future;
     use std::pin::Pin;
@@ -277,8 +278,7 @@ pub mod http_api {
         S: Service<Request<B>> + Clone + Send + 'static,
         // For the same reasons, the future produced by the inner service
         // needs to be Send too.
-        // It needs to be Unpin for our `HttpCallMetricsFuture` to work.
-        S::Future: Send + Unpin,
+        S::Future: Send,
         // B needs to be Send such that Request<B> is Send. It's 'static
         // for the same reasons as listed above.
         B: Send + 'static,
@@ -313,18 +313,21 @@ pub mod http_api {
         }
     }
 
+    #[pin_project]
     pub struct HttpCallMetricsFuture<F> {
+        #[pin]
         future: F,
     }
 
     impl<F> Future for HttpCallMetricsFuture<F>
     where
-        F: Future + Unpin,
+        F: Future,
     {
         type Output = F::Output;
 
-        fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            Pin::new(&mut self.future).poll(cx)
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let this = self.project();
+            this.future.poll(cx)
         }
     }
 

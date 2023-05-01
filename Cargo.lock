@@ -1488,6 +1488,7 @@ dependencies = [
  "futures",
  "hyper",
  "lazy_static",
+ "pin-project",
  "prometheus-client",
  "thiserror",
  "tokio",
