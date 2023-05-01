@@ -253,6 +253,7 @@ pub mod http_api {
     }
 
     /// A middleware for call metrics.
+    #[derive(Clone)]
     pub struct HttpCallMetrics<T> {
         inner: T,
     }
@@ -266,7 +267,17 @@ pub mod http_api {
 
     impl<S, B> Service<Request<B>> for HttpCallMetrics<S>
     where
-        S: Service<Request<B>>,
+        // Inner service needs to be:
+        //  - Send because it is part of a future
+        //  - Clone because BoxFuture requires 'static but we would have to keep
+        //    a reference to self in the call(&mut self, ...) otherwise.
+        S: Service<Request<B>> + Clone + Send + 'static,
+        // For the same reasons, the future produced by the inner service
+        // needs to be Send too.
+        S::Future: Send,
+        // B needs to be Send such that Request<B> is Send. It's 'static
+        // for the same reasons as listed above.
+        B: Send + 'static,
     {
         type Response = S::Response;
         type Error = S::Error;
@@ -277,9 +288,10 @@ pub mod http_api {
         }
 
         fn call(&mut self, request: Request<B>) -> Self::Future {
+            let mut inner = self.inner.clone(); // returned future must be 'static
             Box::pin(async move {
                 let _guard = HttpCallMetricTracker::track(request.uri().path().to_string());
-                self.inner.call(request).await
+                inner.call(request).await
             })
         }
     }

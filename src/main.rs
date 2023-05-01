@@ -151,6 +151,7 @@ fn shutdown_route(
         .and_then(shutdown)
 }
 
+#[derive(Copy, Clone)]
 struct Hello;
 
 impl Service<Request<Body>> for Hello {
