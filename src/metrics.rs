@@ -291,19 +291,9 @@ pub mod http_api {
         }
 
         fn call(&mut self, request: Request<B>) -> Self::Future {
-            // TODO: Wrap into HttpCallMetricsFuture creation.
             let method = request.method().clone();
             let path = request.uri().path().to_string();
-            debug!("Started processing request for {method} {path}");
-
-            let tracker = HttpCallMetricTracker::track(path.clone());
-
-            HttpCallMetricsFuture {
-                future: self.inner.call(request),
-                method,
-                path,
-                tracker,
-            }
+            HttpCallMetricsFuture::new(self.inner.call(request), method, path)
         }
     }
 
@@ -311,9 +301,14 @@ pub mod http_api {
     pub struct HttpCallMetricsFuture<F> {
         #[pin]
         future: F,
-        method: hyper::Method,
-        path: String,
         tracker: HttpCallMetricTracker,
+    }
+
+    impl<F> HttpCallMetricsFuture<F> {
+        fn new(future: F, method: hyper::Method, path: String) -> Self {
+            let tracker = HttpCallMetricTracker::track(method, path);
+            Self { future, tracker }
+        }
     }
 
     impl<F> Future for HttpCallMetricsFuture<F>
@@ -323,36 +318,39 @@ pub mod http_api {
         type Output = F::Output;
 
         fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            // Metrics tracking is done in the `HttpCallMetricTracker` type which is
+            // finalizing when our future is dropped.
             let this = self.project();
-            let res = match this.future.poll(cx) {
-                Poll::Pending => return Poll::Pending,
-                Poll::Ready(output) => output,
-            };
-
-            debug!(
-                "Finished processing request for {method} {path}",
-                method = this.method,
-                path = this.path
-            );
-            Poll::Ready(res)
+            this.future.poll(cx)
         }
     }
 
     /// A metrics tracker. Will call [`HttpMetrics::inc_in_flight`]
     /// on construction and [`HttpMetrics::dec_in_flight`] on drop.
+    ///
+    /// We require this helper type because [`HttpCallMetricsFuture`] cannot imply [`Drop`]
+    /// due to the use of [`pin_project`](pin_project::pin_project).
     struct HttpCallMetricTracker {
+        method: hyper::Method,
         path: String,
     }
 
     impl HttpCallMetricTracker {
-        pub fn track(path: String) -> Self {
+        pub fn track(method: hyper::Method, path: String) -> Self {
+            debug!("Started processing request for {method} {path}");
             HttpMetrics::inc_in_flight(path.as_str());
-            Self { path }
+            Self { method, path }
         }
     }
 
+    /// Implements the metrics finalization logic.
     impl Drop for HttpCallMetricTracker {
         fn drop(&mut self) {
+            debug!(
+                "Finished processing request for {method} {path}",
+                method = self.method,
+                path = self.path
+            );
             HttpMetrics::dec_in_flight(self.path.as_str());
         }
     }
