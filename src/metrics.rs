@@ -205,7 +205,9 @@ pub mod http {
 pub mod http_api {
     use crate::metrics::http::HttpMetrics;
     use crate::metrics::Metrics;
+    use hyper::service::Service;
     use std::convert::Infallible;
+    use std::task::{Context, Poll};
     use warp::log::{Info, Log};
     use warp::path::FullPath;
     use warp::{path, Filter, Rejection, Reply};
@@ -246,5 +248,48 @@ pub mod http_api {
     async fn render_metrics() -> Result<impl Reply, Rejection> {
         let metrics = Metrics::get().encode();
         Ok(metrics)
+    }
+
+    pub struct HttpCallMetrics<T> {
+        inner: T,
+    }
+
+    impl<T> HttpCallMetrics<T> {
+        /// Creates a new [`HttpCallMetrics`]
+        pub fn new(inner: T) -> Self {
+            Self { inner }
+        }
+
+        /// Get a reference to the inner service
+        pub fn get_ref(&self) -> &T {
+            &self.inner
+        }
+
+        /// Get a mutable reference to the inner service
+        pub fn get_mut(&mut self) -> &mut T {
+            &mut self.inner
+        }
+
+        /// Consume `self`, returning the inner service
+        pub fn into_inner(self) -> T {
+            self.inner
+        }
+    }
+
+    impl<S, Request> Service<Request> for HttpCallMetrics<S>
+    where
+        S: Service<Request>,
+    {
+        type Response = S::Response;
+        type Error = S::Error;
+        type Future = S::Future;
+
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            self.inner.poll_ready(cx)
+        }
+
+        fn call(&mut self, request: Request) -> Self::Future {
+            self.inner.call(request)
+        }
     }
 }
