@@ -205,12 +205,14 @@ pub mod http {
 pub mod http_api {
     use crate::metrics::http::HttpMetrics;
     use crate::metrics::Metrics;
+    use futures::prelude::*;
     use hyper::service::Service;
     use hyper::Request;
     use std::convert::Infallible;
+    use std::future::Future;
+    use std::pin::Pin;
     use std::task::{Context, Poll};
     use tower::Layer;
-    use tracing::debug;
     use warp::log::{Info, Log};
     use warp::path::FullPath;
     use warp::{path, Filter, Rejection, Reply};
@@ -275,31 +277,54 @@ pub mod http_api {
         S: Service<Request<B>> + Clone + Send + 'static,
         // For the same reasons, the future produced by the inner service
         // needs to be Send too.
-        S::Future: Send,
+        // It needs to be Unpin for our `HttpCallMetricsFuture` to work.
+        S::Future: Send + Unpin,
         // B needs to be Send such that Request<B> is Send. It's 'static
         // for the same reasons as listed above.
         B: Send + 'static,
     {
         type Response = S::Response;
         type Error = S::Error;
-        type Future = futures::future::BoxFuture<'static, Result<Self::Response, Self::Error>>;
+        type Future = HttpCallMetricsFuture<S::Future>;
 
         fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             self.inner.poll_ready(cx)
         }
 
         fn call(&mut self, request: Request<B>) -> Self::Future {
-            let mut inner = self.inner.clone(); // returned future must be 'static
-            Box::pin(async move {
-                let method = request.method().clone();
-                let path = request.uri().path().to_string();
+            HttpCallMetricsFuture {
+                future: self.inner.call(request),
+            }
 
-                let _guard = HttpCallMetricTracker::track(path.clone());
-                debug!("Started processing request for {method} {path}");
-                let result = inner.call(request).await;
+            /*
+            let mut inner = self.inner.clone(); // returned future must be 'static
+            let method = request.method().clone();
+            let path = request.uri().path().to_string();
+
+            let guard = HttpCallMetricTracker::track(path.clone());
+            debug!("Started processing request for {method} {path}");
+
+            inner.call(request).map(move |response| {
                 debug!("Finished processing request for {method} {path}");
-                result
+                drop(guard);
+                response
             })
+            */
+        }
+    }
+
+    pub struct HttpCallMetricsFuture<F> {
+        future: F,
+    }
+
+    impl<F> Future for HttpCallMetricsFuture<F>
+    where
+        F: Future + Unpin,
+    {
+        type Output = F::Output;
+
+        fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            Pin::new(&mut self.future).poll(cx)
         }
     }
 
