@@ -1,19 +1,16 @@
-use crate::bind::{bind_tcp_sockets, BindError};
-use clap::ArgMatches;
 use futures::stream::FuturesUnordered;
-use futures::{StreamExt, TryFutureExt};
+use futures::StreamExt;
 use hyper::Server;
 use std::convert::Infallible;
-use std::net::{SocketAddr, TcpListener};
+use std::net::SocketAddr;
 use std::process::ExitCode;
 use std::time::Duration;
 use tokio::sync::broadcast;
 use tower::ServiceBuilder;
-use tracing::{debug, error, info, trace};
-use warp::hyper::service::{make_service_fn, Service};
+use tracing::{error, info};
+use warp::hyper::service::make_service_fn;
 use warp::{Filter, Rejection, Reply};
 
-mod bind;
 mod commands;
 mod filters;
 mod health;
@@ -25,18 +22,15 @@ mod services;
 async fn main() -> ExitCode {
     dotenvy::dotenv().ok();
     let matches = commands::build_command().get_matches();
+
     logging::initialize_from_matches(&matches);
+    info!("Hi. 👋");
 
     // Provide a signal that can be used to shut down the server.
-    let (shutdown_tx, mut shutdown_rx) = broadcast::channel::<()>(1);
-
-    info!("Hi. 👋");
+    let (shutdown_tx, shutdown_rx) = broadcast::channel::<()>(1);
 
     // GET /hello/warp => 200 OK with body "Hello, warp!"
     let hello = warp::path!("hello" / String).and_then(hello);
-
-    // GET /hello/ => 200 OK with body "Hello World!"
-    // let hello_world = warp::path!("hello").and_then(Hello);
 
     // GET /slow => a slow requests
     let slow = warp::path!("slow").and_then(slow);
@@ -58,7 +52,7 @@ async fn main() -> ExitCode {
         }
     });
 
-    let builder = ServiceBuilder::new().service(make_svc);
+    let service_builder = ServiceBuilder::new().service(make_svc);
 
     // Get the HTTP socket addresses to bind on.
     let http_sockets: Vec<SocketAddr> = matches
@@ -72,9 +66,20 @@ async fn main() -> ExitCode {
     for addr in http_sockets {
         info!("Binding to {addr}", addr = addr);
         let mut shutdown_rx = shutdown_tx.subscribe();
-        // TODO: This panics now if the address is already in use.
-        let server = Server::bind(&addr)
-            .serve(builder)
+
+        let builder = match Server::try_bind(&addr) {
+            Ok(builder) => builder,
+            Err(e) => {
+                error!("Unable to bind to {addr}: {error}", addr = addr, error = e);
+
+                // No servers are currently running since no await was called on any
+                // of them yet. Therefore, exiting here is "graceful".
+                return ExitCode::from(exitcode::NOPERM as u8);
+            }
+        };
+
+        let server = builder
+            .serve(service_builder)
             .with_graceful_shutdown(async move {
                 shutdown_rx.recv().await.ok();
             });
@@ -82,13 +87,18 @@ async fn main() -> ExitCode {
         servers.push(server);
     }
 
-    let mut server_error = false;
+    // Wait for all servers to stop.
+    let mut exit_code = None;
     while let Some(result) = servers.next().await {
         match result {
             Ok(()) => {}
             Err(e) => {
-                server_error = true;
-                error!("Server error: {}", e)
+                error!("Server error: {}", e);
+
+                // Apply better error code if known.
+                if exit_code.is_none() {
+                    exit_code = Some(ExitCode::FAILURE);
+                }
             }
         }
 
@@ -97,12 +107,12 @@ async fn main() -> ExitCode {
         shutdown_tx.send(()).ok();
     }
 
-    if server_error {
-        ExitCode::FAILURE
-    } else {
-        info!("Bye. 👋");
-        ExitCode::SUCCESS
+    if let Some(error_code) = exit_code {
+        return error_code;
     }
+
+    info!("Bye. 👋");
+    ExitCode::SUCCESS
 }
 
 /// Responds with the caller's name.
