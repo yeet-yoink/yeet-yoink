@@ -209,7 +209,9 @@ pub mod http_api {
     use hyper::Request;
     use pin_project::pin_project;
     use std::future::Future;
+    use std::marker::PhantomData;
     use std::pin::Pin;
+    use std::process::Output;
     use std::task::{Context, Poll};
     use std::time::Duration;
     use tokio::time::Instant;
@@ -247,24 +249,29 @@ pub mod http_api {
 
     /// A middleware for call metrics.
     #[derive(Clone)]
-    pub struct HttpCallMetrics<T> {
+    pub struct HttpCallMetrics<T, O> {
         inner: T,
+        _phantom: PhantomData<O>,
     }
 
-    impl<T> HttpCallMetrics<T> {
+    impl<T, O> HttpCallMetrics<T, O> {
         /// Creates a new [`HttpCallMetrics`]
         pub fn new(inner: T) -> Self {
-            Self { inner }
+            Self {
+                inner,
+                _phantom: PhantomData::default(),
+            }
         }
     }
 
-    impl<S, B> Service<Request<B>> for HttpCallMetrics<S>
+    impl<S, B, O> Service<Request<B>> for HttpCallMetrics<S, O>
     where
         // Inner service needs to be:
         //  - Send because it is part of a future
         //  - Clone because BoxFuture requires 'static but we would have to keep
         //    a reference to self in the call(&mut self, ...) otherwise.
         S: Service<Request<B>> + Clone + Send + 'static,
+        S::Response: Into<hyper::Response<O>>,
         // For the same reasons, the future produced by the inner service
         // needs to be Send too.
         S::Future: Send,
