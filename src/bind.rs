@@ -2,6 +2,11 @@
 
 use clap::ArgMatches;
 use futures::stream::SelectAll;
+use futures::{AsyncRead, AsyncWrite};
+use hyper::body::HttpBody;
+use hyper::server::accept::Accept;
+use hyper::{Body, Server};
+use std::future::Future;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;

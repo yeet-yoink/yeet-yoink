@@ -1,4 +1,7 @@
-use crate::bind::bind_tcp_sockets;
+use crate::bind::{bind_tcp_sockets, BindError};
+use clap::ArgMatches;
+use futures::stream::FuturesUnordered;
+use futures::{StreamExt, TryFutureExt};
 use hyper::Server;
 use std::convert::Infallible;
 use std::net::{SocketAddr, TcpListener};
@@ -6,7 +9,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 use tokio::sync::broadcast;
 use tower::ServiceBuilder;
-use tracing::{error, info};
+use tracing::{debug, error, info, trace};
 use warp::hyper::service::{make_service_fn, Service};
 use warp::{Filter, Rejection, Reply};
 
@@ -38,16 +41,6 @@ async fn main() -> ExitCode {
     // GET /slow => a slow requests
     let slow = warp::path!("slow").and_then(slow);
 
-    /*
-    let streams = match bind_tcp_sockets(&matches).await {
-        Ok(s) => s,
-        Err(_e) => {
-            // error is already logged
-            return ExitCode::from(exitcode::NOPERM as u8);
-        }
-    };
-     */
-
     let make_svc = make_service_fn(|_conn| {
         let tx = shutdown_tx.clone();
 
@@ -67,25 +60,48 @@ async fn main() -> ExitCode {
 
     let builder = ServiceBuilder::new().service(make_svc);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
-    let listener = TcpListener::bind(addr).unwrap();
+    // Get the HTTP socket addresses to bind on.
+    let http_sockets: Vec<SocketAddr> = matches
+        .get_many("bind_http")
+        .into_iter()
+        .flatten()
+        .cloned()
+        .collect();
 
-    let server = Server::from_tcp(listener)
-        .unwrap()
-        .serve(builder)
-        .with_graceful_shutdown(async move {
-            shutdown_rx.recv().await.ok();
-        });
+    let mut servers = FuturesUnordered::new();
+    for addr in http_sockets {
+        info!("Binding to {addr}", addr = addr);
+        let mut shutdown_rx = shutdown_tx.subscribe();
+        // TODO: This panics now if the address is already in use.
+        let server = Server::bind(&addr)
+            .serve(builder)
+            .with_graceful_shutdown(async move {
+                shutdown_rx.recv().await.ok();
+            });
 
-    match server.await {
-        Ok(()) => {
-            info!("Bye. 👋");
-            ExitCode::SUCCESS
+        servers.push(server);
+    }
+
+    let mut server_error = false;
+    while let Some(result) = servers.next().await {
+        match result {
+            Ok(()) => {}
+            Err(e) => {
+                server_error = true;
+                error!("Server error: {}", e)
+            }
         }
-        Err(e) => {
-            error!("Server error: {}", e);
-            ExitCode::FAILURE
-        }
+
+        // Ensure that all other servers also shut down in presence
+        // of an error of any one of them.
+        shutdown_tx.send(()).ok();
+    }
+
+    if server_error {
+        ExitCode::FAILURE
+    } else {
+        info!("Bye. 👋");
+        ExitCode::SUCCESS
     }
 }
 
