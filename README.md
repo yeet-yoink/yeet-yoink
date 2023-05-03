@@ -16,3 +16,7 @@ This is meant to simplify cluster-local file sharing with configurable persisten
 * `/livez` - Meant for Kubernetes liveness probes. 
 * `/health` - Meant for complete health checks (e.g. by Google Cloud Load Balancer). 
 * `/healthz` - Meant for human inspection.
+
+### Shutdown
+
+* `/stop` - Initiates a graceful shutdown.
