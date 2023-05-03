@@ -61,8 +61,8 @@ async fn main() -> ExitCode {
                     hello
                         .or(slow)
                         .or(filters::metrics_endpoint())
-                        .or(health::http_api::health_endpoints())
-                        .or(shutdown_route(tx)),
+                        .or(filters::health_endpoints())
+                        .or(filters::shutdown_endpoint(tx)),
                 ),
             );
 
@@ -111,31 +111,6 @@ async fn hello(name: String) -> Result<impl Reply, Rejection> {
 async fn slow() -> Result<impl Reply, Rejection> {
     tokio::time::sleep(Duration::from_secs(5)).await;
     Ok(format!("That was slow."))
-}
-
-/// Initiates a graceful shutdown.
-///
-/// ```http
-/// POST /stop
-/// ```
-async fn shutdown(tx: broadcast::Sender<()>) -> Result<impl Reply, Rejection> {
-    warn!("Initiating shutdown from API call");
-    tx.send(()).ok();
-    Ok(warp::reply::reply())
-}
-
-/// Builds the route for the [`shutdown`] handler.
-fn shutdown_route(
-    tx: broadcast::Sender<()>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    let shutdown_filter = warp::any().map(move || tx.clone());
-
-    // POST /stop to shut down the server.
-    warp::post()
-        .and(warp::path("stop"))
-        .and(warp::path::end())
-        .and(shutdown_filter)
-        .and_then(shutdown)
 }
 
 #[derive(Copy, Clone)]
