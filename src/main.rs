@@ -57,13 +57,11 @@ async fn main() -> ExitCode {
 
         async move {
             let svc = warp::service(
-                warp::any().and(
-                    hello
-                        .or(slow)
-                        .or(filters::metrics_endpoint())
-                        .or(filters::health_endpoints())
-                        .or(filters::shutdown_endpoint(tx)),
-                ),
+                hello
+                    .or(slow)
+                    .or(filters::metrics_endpoint())
+                    .or(filters::health_endpoints())
+                    .or(filters::shutdown_endpoint(tx)),
             );
 
             let svc = services::HttpCallMetrics::new(svc);
@@ -76,11 +74,12 @@ async fn main() -> ExitCode {
     let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
     let listener = TcpListener::bind(addr).unwrap();
 
-    let server = Server::from_tcp(listener).unwrap().serve(builder);
-
-    let server = server.with_graceful_shutdown(async move {
-        shutdown_rx.recv().await.ok();
-    });
+    let server = Server::from_tcp(listener)
+        .unwrap()
+        .serve(builder)
+        .with_graceful_shutdown(async move {
+            shutdown_rx.recv().await.ok();
+        });
 
     match server.await {
         Ok(()) => {

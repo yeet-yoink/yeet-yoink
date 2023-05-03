@@ -14,14 +14,14 @@ use tracing::debug;
 
 /// A middleware for call metrics. Uses [`HttpMetrics`].
 #[derive(Clone)]
-pub struct HttpCallMetrics<T, O> {
-    inner: T,
+pub struct HttpCallMetrics<S, O> {
+    inner: S,
     _phantom: PhantomData<O>,
 }
 
-impl<T, O> HttpCallMetrics<T, O> {
+impl<S, O> HttpCallMetrics<S, O> {
     /// Creates a new [`HttpCallMetrics`]
-    pub fn new(inner: T) -> Self {
+    pub fn new(inner: S) -> Self {
         Self {
             inner,
             _phantom: PhantomData::default(),
@@ -122,6 +122,8 @@ struct HttpCallMetricTracker {
 pub enum ResultState {
     /// No result was executed so far, or the result was already processed.
     None,
+    /// Request was started.
+    Started,
     /// The result failed with an error.
     Failed,
     /// The result is an actual HTTP response.
@@ -129,7 +131,7 @@ pub enum ResultState {
 }
 
 impl HttpCallMetricTracker {
-    pub fn start<B>(request: &Request<B>) -> Self {
+    fn start<B>(request: &Request<B>) -> Self {
         let method = request.method().clone();
         let path = request.uri().path().to_string();
         let version = request.version();
@@ -142,11 +144,11 @@ impl HttpCallMetricTracker {
             method,
             path,
             start,
-            state: Cell::new(ResultState::None),
+            state: Cell::new(ResultState::Started),
         }
     }
 
-    pub fn set_state(&self, state: ResultState) {
+    fn set_state(&self, state: ResultState) {
         self.state.set(state)
     }
 
@@ -162,6 +164,9 @@ impl Drop for HttpCallMetricTracker {
             ResultState::None => {
                 // This was already handled; don't decrement metrics again.
                 return;
+            }
+            ResultState::Started => {
+                // no request was actually performed.
             }
             ResultState::Failed => {
                 let duration = self.duration();
