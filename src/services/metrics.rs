@@ -31,18 +31,8 @@ impl<T, O> HttpCallMetrics<T, O> {
 
 impl<S, B, O> Service<Request<B>> for HttpCallMetrics<S, O>
 where
-    // Inner service needs to be:
-    //  - Send because it is part of a future
-    //  - Clone because BoxFuture requires 'static but we would have to keep
-    //    a reference to self in the call(&mut self, ...) otherwise.
-    S: Service<Request<B>> + Clone + Send + 'static,
+    S: Service<Request<B>>,
     S::Response: Into<hyper::Response<O>>,
-    // For the same reasons, the future produced by the inner service
-    // needs to be Send too.
-    S::Future: Send,
-    // B needs to be Send such that Request<B> is Send. It's 'static
-    // for the same reasons as listed above.
-    B: Send + 'static,
 {
     type Response = hyper::Response<O>;
     type Error = S::Error;
