@@ -283,10 +283,10 @@ pub mod http_api {
         fn call(&mut self, request: Request<B>) -> Self::Future {
             let method = request.method().clone();
             let path = request.uri().path().to_string();
+            let tracker = HttpCallMetricTracker::start(method, path);
 
             // We start tracking request time before the first call to the future.
-            let start = Instant::now();
-            HttpCallMetricsFuture::new(self.inner.call(request), method, path, start)
+            HttpCallMetricsFuture::new(self.inner.call(request), tracker)
         }
     }
 
@@ -298,8 +298,7 @@ pub mod http_api {
     }
 
     impl<F> HttpCallMetricsFuture<F> {
-        fn new(future: F, method: hyper::Method, path: String, start: Instant) -> Self {
-            let tracker = HttpCallMetricTracker::track(method, path, start);
+        fn new(future: F, tracker: HttpCallMetricTracker) -> Self {
             Self { future, tracker }
         }
     }
@@ -336,9 +335,10 @@ pub mod http_api {
     }
 
     impl HttpCallMetricTracker {
-        pub fn track(method: hyper::Method, path: String, start: Instant) -> Self {
+        pub fn start(method: hyper::Method, path: String) -> Self {
             debug!("Started processing request for {method} {path}");
             HttpMetrics::inc_in_flight(path.as_str());
+            let start = Instant::now();
             Self {
                 method,
                 path,

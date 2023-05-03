@@ -51,21 +51,6 @@ async fn main() -> ExitCode {
     };
      */
 
-    /*
-    let filter = with_start_call_metrics()
-        .and(
-            hello
-                // .or(hello_world)
-                .or(slow)
-                .or(metrics::http_api::metrics_endpoint())
-                .or(health::http_api::health_endpoints())
-                .or(shutdown),
-        )
-        // TODO: If the call (e.g. of `slow`) is cancelled, this is never reached.
-        .with(with_end_call_metrics());
-     */
-
-    // Typical hyper setup...
     let make_svc = make_service_fn(|_conn| {
         let tx = shutdown_tx.clone();
 
