@@ -13,6 +13,7 @@ rust-version = "1.68.0"
 [dependencies]
 anyhow = "1.0.70"
 clap = { version = "4.2.4", features = ["env"] }
+ctrlc = { version = "3.2.5", features = ["termination"] }
 dotenvy = "0.15.7"
 exitcode = "1.1.2"
 futures = "0.3.28"

@@ -6,8 +6,9 @@ use std::net::SocketAddr;
 use std::process::ExitCode;
 use std::time::Duration;
 use tokio::sync::broadcast;
+use tokio::sync::broadcast::Sender;
 use tower::ServiceBuilder;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use warp::hyper::service::make_service_fn;
 use warp::{Filter, Rejection, Reply};
 
@@ -27,7 +28,8 @@ async fn main() -> ExitCode {
     info!("Hi. 👋");
 
     // Provide a signal that can be used to shut down the server.
-    let (shutdown_tx, shutdown_rx) = broadcast::channel::<()>(1);
+    let (shutdown_tx, _) = broadcast::channel::<()>(1);
+    register_shutdown_handler(shutdown_tx.clone());
 
     // GET /hello/warp => 200 OK with body "Hello, warp!"
     let hello = warp::path!("hello" / String).and_then(hello);
@@ -113,6 +115,14 @@ async fn main() -> ExitCode {
 
     info!("Bye. 👋");
     ExitCode::SUCCESS
+}
+
+fn register_shutdown_handler(shutdown_tx: Sender<()>) {
+    ctrlc::set_handler(move || {
+        warn!("Initiating shutdown from OS");
+        shutdown_tx.send(()).ok();
+    })
+    .expect("Error setting process termination handler");
 }
 
 /// Responds with the caller's name.
