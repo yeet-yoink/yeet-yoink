@@ -1,17 +1,13 @@
 use crate::bind::bind_tcp_sockets;
 use hyper::Server;
 use std::convert::Infallible;
-use std::future::{ready, Ready};
 use std::net::{SocketAddr, TcpListener};
 use std::process::ExitCode;
-use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::sync::broadcast;
 use tower::ServiceBuilder;
-use tracing::{error, info, warn};
-use warp::http::{Request, Response};
+use tracing::{error, info};
 use warp::hyper::service::{make_service_fn, Service};
-use warp::hyper::Body;
 use warp::{Filter, Rejection, Reply};
 
 mod bind;
@@ -110,22 +106,4 @@ async fn hello(name: String) -> Result<impl Reply, Rejection> {
 async fn slow() -> Result<impl Reply, Rejection> {
     tokio::time::sleep(Duration::from_secs(5)).await;
     Ok(format!("That was slow."))
-}
-
-#[derive(Copy, Clone)]
-struct Hello;
-
-impl Service<Request<Body>> for Hello {
-    type Response = Response<Body>;
-    type Error = Infallible;
-    type Future = Ready<Result<Self::Response, Self::Error>>;
-
-    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        // We produce our result right away.
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, _req: Request<Body>) -> Self::Future {
-        ready(Ok(Response::new(Body::from("Hello world"))))
-    }
 }
