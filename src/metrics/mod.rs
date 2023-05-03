@@ -1,3 +1,5 @@
+//! Contains metrics related code.
+
 pub mod http;
 
 use lazy_static::lazy_static;

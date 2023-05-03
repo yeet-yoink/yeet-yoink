@@ -1,3 +1,5 @@
+//! Contains warp filters.
+
 use crate::metrics::Metrics;
 use warp::{Filter, Rejection, Reply};
 
