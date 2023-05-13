@@ -1,14 +1,28 @@
 //! Contains the `/stop` endpoint filter.
 
 use crate::AppState;
+use axum::body::HttpBody;
 use axum::extract::State;
-use axum::routing::{post, MethodRouter};
+use axum::routing::post;
+use axum::Router;
 use tracing::warn;
 
-/// Builds the route for the [`shutdown`] handler.
-pub fn shutdown_endpoint() -> MethodRouter<AppState> {
-    // POST /stop to shut down the server.
-    post(shutdown)
+pub trait ShutdownRoutes {
+    /// Provides an API for graceful shutdown.
+    ///
+    /// ```http
+    /// POST /stop HTTP/1.1
+    /// ```
+    fn map_shutdown_endpoint(self) -> Self;
+}
+
+impl<B> ShutdownRoutes for Router<AppState, B>
+where
+    B: HttpBody + Send + 'static,
+{
+    fn map_shutdown_endpoint(self) -> Self {
+        self.route("/stop", post(shutdown))
+    }
 }
 
 /// Initiates a graceful shutdown.

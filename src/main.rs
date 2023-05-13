@@ -1,4 +1,4 @@
-use crate::handlers::HealthRoutes;
+use crate::handlers::*;
 use axum::Router;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
@@ -40,9 +40,9 @@ async fn main() -> ExitCode {
     };
 
     let app = Router::new()
-        .route("/metrics", handlers::metrics_endpoint())
-        .route("/stop", handlers::shutdown_endpoint())
-        .route("/yeet", handlers::yeet_endpoint())
+        .map_metrics_endpoint()
+        .map_shutdown_endpoint()
+        .map_yeet_endpoint()
         .map_health_endpoints()
         .with_state(app_state)
         // .layer(services::HttpCallMetricsLayer::default());

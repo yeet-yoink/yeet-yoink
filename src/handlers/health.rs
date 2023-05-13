@@ -27,22 +27,41 @@ pub enum HealthCheckFormat {
     Complex,
 }
 
-pub trait HealthRoutes<S, B> {
-    /// Builds the health handlers.
+pub trait HealthRoutes {
+    /// Provides an API for initiating health checks.
+    ///
+    /// For readiness probes (compact output):
+    ///
+    /// ```http
+    /// GET /readyz HTTP/1.1
+    /// ```
+    ///
+    /// For liveness probes (compact output):
+    ///
+    /// ```http
+    /// GET /livez HTTP/1.1
+    /// ```
+    ///
+    /// For combined health probes (compact output):
+    ///
+    /// ```http
+    /// GET /health HTTP/1.1
+    /// ```
+    ///
+    /// For combined health probes in human-readable output:
+    ///
+    /// ```http
+    /// GET /healthz HTTP/1.1
+    /// ```
     fn map_health_endpoints(self) -> Self;
 }
 
-impl<S, B> HealthRoutes<S, B> for Router<S, B>
+impl<S, B> HealthRoutes for Router<S, B>
 where
     S: Clone + Send + Sync + 'static,
     B: HttpBody + Send + 'static,
 {
-    /// Builds the health handlers.
-    fn map_health_endpoints(self) -> Self
-    where
-        S: Clone + Send + Sync + 'static,
-        B: HttpBody + Send + 'static,
-    {
+    fn map_health_endpoints(self) -> Self {
         self.route(
             "/health",
             health_endpoint(HealthCheck::Full(HealthCheckFormat::Compact)),

@@ -6,8 +6,8 @@ use axum::body::HttpBody;
 use axum::extract::BodyStream;
 use axum::headers::{ContentLength, ContentType};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{post, MethodRouter};
-use axum::TypedHeader;
+use axum::routing::post;
+use axum::{Router, TypedHeader};
 use hyper::body::Buf;
 use hyper::StatusCode;
 use sha2::Digest;
@@ -16,21 +16,29 @@ use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;
 use tracing::{debug, trace};
 
-const ROUTE: &'static str = "yeet";
+pub trait YeetRoutes {
+    /// Provides an API for storing files.
+    ///
+    /// ```http
+    /// POST /yeet HTTP/1.1
+    /// Content-Length: 1024
+    /// Content-Type: application/my-type
+    ///
+    /// your-data
+    /// ```
+    fn map_yeet_endpoint(self) -> Self;
+}
 
-/// Provides metrics.
-///
-/// ```http
-/// GET /metrics
-/// ```
-pub fn yeet_endpoint<S, B>() -> MethodRouter<S, B>
+impl<S, B> YeetRoutes for Router<S, B>
 where
     S: Clone + Send + Sync + 'static,
     B: HttpBody + Send + Sync + 'static,
     axum::body::Bytes: From<<B as HttpBody>::Data>,
     <B as HttpBody>::Error: std::error::Error + Send + Sync,
 {
-    post(do_yeet)
+    fn map_yeet_endpoint(self) -> Self {
+        self.route("/yeet", post(do_yeet))
+    }
 }
 
 #[axum::debug_handler]
@@ -38,7 +46,7 @@ async fn do_yeet(
     content_length: Option<TypedHeader<ContentLength>>,
     content_type: Option<TypedHeader<ContentType>>,
     content_md5: Option<TypedHeader<ContentMd5>>,
-    mut stream: BodyStream,
+    stream: BodyStream,
 ) -> Result<Response, Infallible> {
     // TODO: Add server-side validation of MD5 value if header is present.
 
