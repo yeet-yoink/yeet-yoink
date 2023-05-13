@@ -1,10 +1,11 @@
 //! Contains the `/health` endpoint filter.
 
 use crate::health::HealthState;
+use axum::body::HttpBody;
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, MethodRouter};
+use axum::Router;
 use std::convert::Infallible;
-use warp::http::Response;
-use warp::hyper::Body;
-use warp::{Filter, Rejection, Reply};
 
 /// Defines a type of health check.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -26,16 +27,34 @@ pub enum HealthCheckFormat {
     Complex,
 }
 
-/// Builds the health handlers.
-pub fn health_endpoints() -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    health_endpoint("health", HealthCheck::Full(HealthCheckFormat::Compact))
-        .or(health_endpoint("startupz", HealthCheck::Startup))
-        .or(health_endpoint("readyz", HealthCheck::Readiness))
-        .or(health_endpoint("livez", HealthCheck::Liveness))
-        .or(health_endpoint(
-            "healthz",
-            HealthCheck::Full(HealthCheckFormat::Complex),
-        ))
+pub trait HealthRoutes<S, B> {
+    /// Builds the health handlers.
+    fn route_health_endpoints(self) -> Self;
+}
+
+impl<S, B> HealthRoutes<S, B> for Router<S, B>
+where
+    S: Clone + Send + Sync + 'static,
+    B: HttpBody + Send + 'static,
+{
+    /// Builds the health handlers.
+    fn route_health_endpoints(mut self) -> Self
+    where
+        S: Clone + Send + Sync + 'static,
+        B: HttpBody + Send + 'static,
+    {
+        self.route(
+            "/health",
+            health_endpoint(HealthCheck::Full(HealthCheckFormat::Compact)),
+        )
+        .route("/startupz", health_endpoint(HealthCheck::Startup))
+        .route("/readyz", health_endpoint(HealthCheck::Readiness))
+        .route("/livez", health_endpoint(HealthCheck::Liveness))
+        .route(
+            "/healthz",
+            health_endpoint(HealthCheck::Full(HealthCheckFormat::Complex)),
+        )
+    }
 }
 
 /// Builds a health handler.
@@ -43,15 +62,12 @@ pub fn health_endpoints() -> impl Filter<Extract = (impl Reply,), Error = Reject
 /// ## Arguments
 /// * `path` - The path on which to host the handler, e.g. `health`, `readyz`, etc.
 /// * `checks` - The type of health check to run on that path.
-fn health_endpoint(
-    path: &'static str,
-    checks: HealthCheck,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    warp::get()
-        .and(warp::path(path))
-        .and(warp::path::end())
-        .and(with_check_type(checks))
-        .and_then(handle_health)
+fn health_endpoint<S, B>(checks: HealthCheck) -> MethodRouter<S, B, Infallible>
+where
+    S: Clone + Send + Sync + 'static,
+    B: HttpBody + Send + 'static,
+{
+    get(move || handle_health(checks))
 }
 
 /// Performs a health check.
@@ -59,7 +75,7 @@ fn health_endpoint(
 /// ```http
 /// GET /health
 /// ```
-async fn handle_health(checks: HealthCheck) -> Result<impl Reply, Rejection> {
+async fn handle_health(checks: HealthCheck) -> Result<HealthState, Infallible> {
     // TODO: Actually implement health checks!
     match checks {
         HealthCheck::Startup => Ok(HealthState::Healthy),
@@ -70,15 +86,8 @@ async fn handle_health(checks: HealthCheck) -> Result<impl Reply, Rejection> {
     }
 }
 
-/// Injects the [`HealthCheck`] type into the request pipeline.
-fn with_check_type(
-    checks: HealthCheck,
-) -> impl Filter<Extract = (HealthCheck,), Error = Infallible> + Copy + Clone {
-    warp::any().map(move || checks)
-}
-
-impl Reply for HealthState {
-    fn into_response(self) -> warp::reply::Response {
-        Response::new(Body::from(format!("{}", self)))
+impl IntoResponse for HealthState {
+    fn into_response(self) -> Response {
+        format!("{}", self).into_response()
     }
 }

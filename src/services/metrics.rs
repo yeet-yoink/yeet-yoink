@@ -3,6 +3,7 @@ use hyper::{Request, StatusCode, Version};
 use pin_project::pin_project;
 
 use crate::metrics::http::HttpMetrics;
+use hyper::body::HttpBody;
 use std::cell::Cell;
 use std::future::Future;
 use std::marker::PhantomData;
@@ -10,6 +11,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::time::Instant;
+use tower::Layer;
 use tracing::debug;
 
 /// A middleware for call metrics. Uses [`HttpMetrics`].
@@ -18,6 +20,10 @@ pub struct HttpCallMetrics<S, O> {
     inner: S,
     _phantom: PhantomData<O>,
 }
+
+/// A layer for call metrics. Uses [`HttpCallMetrics`].
+#[derive(Clone, Default)]
+pub struct HttpCallMetricsLayer;
 
 impl<S, O> HttpCallMetrics<S, O> {
     /// Creates a new [`HttpCallMetrics`]
@@ -29,10 +35,18 @@ impl<S, O> HttpCallMetrics<S, O> {
     }
 }
 
-impl<S, B, O> Service<Request<B>> for HttpCallMetrics<S, O>
+impl<S, B> Layer<S> for HttpCallMetricsLayer {
+    type Service = HttpCallMetrics<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        HttpCallMetrics::new(inner)
+    }
+}
+
+impl<S, B> Service<Request<B>> for HttpCallMetrics<S>
 where
     S: Service<Request<B>>,
-    S::Response: Into<hyper::Response<O>>,
+    S::Response: Into<hyper::Response<HttpBody>>,
 {
     type Response = hyper::Response<O>;
     type Error = S::Error;

@@ -1,7 +1,9 @@
 //! Contains the `/metrics` endpoint filter.
 
 use crate::metrics::Metrics;
-use warp::{Filter, Rejection, Reply};
+use axum::body::HttpBody;
+use axum::routing::{get, MethodRouter};
+use std::convert::Infallible;
 
 const ROUTE: &'static str = "metrics";
 
@@ -10,14 +12,14 @@ const ROUTE: &'static str = "metrics";
 /// ```http
 /// GET /metrics
 /// ```
-pub fn metrics_endpoint() -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    warp::get()
-        .and(warp::path(ROUTE))
-        .and(warp::path::end())
-        .and_then(render_metrics)
+pub fn metrics_endpoint<S, B>() -> MethodRouter<S, B, Infallible>
+where
+    S: Clone + Send + Sync + 'static,
+    B: HttpBody + Send + 'static,
+{
+    get(render_metrics)
 }
 
-async fn render_metrics() -> Result<impl Reply, Rejection> {
-    let metrics = Metrics::get().encode();
-    Ok(metrics)
+async fn render_metrics() -> String {
+    Metrics::get().encode()
 }
