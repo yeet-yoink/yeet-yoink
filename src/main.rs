@@ -1,4 +1,4 @@
-use crate::filters::HealthRoutes;
+use crate::handlers::HealthRoutes;
 use axum::{Router, ServiceExt};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
@@ -11,11 +11,16 @@ use tower::ServiceBuilder;
 use tracing::{error, info, warn};
 
 mod commands;
-mod filters;
+mod handlers;
 mod health;
 mod logging;
 mod metrics;
 mod services;
+
+#[derive(Clone)]
+pub struct AppState {
+    shutdown_tx: Sender<()>,
+}
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -29,9 +34,15 @@ async fn main() -> ExitCode {
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
     register_shutdown_handler(shutdown_tx.clone());
 
+    let app_state = AppState {
+        shutdown_tx: shutdown_tx.clone(),
+    };
+
     let app = Router::new()
-        .route("/metrics", filters::metrics_endpoint())
-        .route_health_endpoints()
+        .route("/metrics", handlers::metrics_endpoint())
+        .route("/stop", handlers::shutdown_endpoint())
+        .map_health_endpoints()
+        .with_state(app_state)
         // .layer(services::HttpCallMetricsLayer::default());
     ;
 

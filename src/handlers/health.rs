@@ -29,7 +29,7 @@ pub enum HealthCheckFormat {
 
 pub trait HealthRoutes<S, B> {
     /// Builds the health handlers.
-    fn route_health_endpoints(self) -> Self;
+    fn map_health_endpoints(self) -> Self;
 }
 
 impl<S, B> HealthRoutes<S, B> for Router<S, B>
@@ -38,7 +38,7 @@ where
     B: HttpBody + Send + 'static,
 {
     /// Builds the health handlers.
-    fn route_health_endpoints(mut self) -> Self
+    fn map_health_endpoints(mut self) -> Self
     where
         S: Clone + Send + Sync + 'static,
         B: HttpBody + Send + 'static,
