@@ -3,6 +3,7 @@
 use async_tempfile::TempFile;
 use futures::Stream;
 use hyper::{HeaderMap, StatusCode};
+use sha2::Digest;
 use std::convert::Infallible;
 use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;
@@ -63,7 +64,8 @@ where
     }
 
     let mut stream = Box::pin(stream);
-    let mut md5_context = md5::Context::new();
+    let mut md5 = md5::Context::new();
+    let mut sha256 = sha2::Sha256::new();
 
     let mut bytes_written = 0;
     while let Some(result) = stream.next().await {
@@ -80,7 +82,8 @@ where
 
         while data.has_remaining() {
             let chunk = data.chunk();
-            md5_context.consume(chunk);
+            md5.consume(chunk);
+            sha256.update(chunk);
 
             match file.write(&chunk).await {
                 Ok(0) => {}
@@ -112,12 +115,14 @@ where
         // TODO: Wake up consumers
     }
 
-    let md5 = md5_context.compute();
+    let md5 = md5.compute();
+    let sha256 = sha256.finalize();
 
     debug!(
-        "Stream ended, buffered {bytes} bytes to disk; MD5 {digest:x}",
+        "Stream ended, buffered {bytes} bytes to disk; MD5 {md5:x}, SHA256 {sha256:x}",
         bytes = bytes_written,
-        digest = md5
+        md5 = md5,
+        sha256 = sha256
     );
 
     Ok("".into_response())
