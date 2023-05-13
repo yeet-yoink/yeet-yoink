@@ -1,23 +1,27 @@
+use crate::handlers::*;
+use axum::Router;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use hyper::Server;
-use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::process::ExitCode;
-use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Sender;
 use tower::ServiceBuilder;
 use tracing::{error, info, warn};
-use warp::hyper::service::make_service_fn;
-use warp::{Filter, Rejection, Reply};
 
 mod commands;
-mod filters;
+mod handlers;
+mod headers;
 mod health;
 mod logging;
 mod metrics;
 mod services;
+
+#[derive(Clone)]
+pub struct AppState {
+    shutdown_tx: Sender<()>,
+}
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -31,29 +35,19 @@ async fn main() -> ExitCode {
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
     register_shutdown_handler(shutdown_tx.clone());
 
-    // GET /hello/warp => 200 OK with body "Hello, warp!"
-    let hello = warp::path!("hello" / String).and_then(hello);
+    let app_state = AppState {
+        shutdown_tx: shutdown_tx.clone(),
+    };
 
-    // GET /slow => a slow requests
-    let slow = warp::path!("slow").and_then(slow);
+    let app = Router::new()
+        .map_metrics_endpoint()
+        .map_shutdown_endpoint()
+        .map_yeet_endpoint()
+        .map_health_endpoints()
+        .with_state(app_state)
+        .layer(services::HttpCallMetricsLayer::default());
 
-    let make_svc = make_service_fn(|_conn| {
-        let tx = shutdown_tx.clone();
-
-        async move {
-            let svc = warp::service(
-                hello
-                    .or(slow)
-                    .or(filters::yeet_endpoint())
-                    .or(filters::metrics_endpoint())
-                    .or(filters::health_endpoints())
-                    .or(filters::shutdown_endpoint(tx)),
-            );
-
-            let svc = services::HttpCallMetrics::new(svc);
-            Ok::<_, Infallible>(svc)
-        }
-    });
+    let make_svc = app.into_make_service();
 
     let service_builder = ServiceBuilder::new().service(make_svc);
 
@@ -82,7 +76,7 @@ async fn main() -> ExitCode {
         };
 
         let server = builder
-            .serve(service_builder)
+            .serve(service_builder.clone())
             .with_graceful_shutdown(async move {
                 shutdown_rx.recv().await.ok();
             });
@@ -124,23 +118,4 @@ fn register_shutdown_handler(shutdown_tx: Sender<()>) {
         shutdown_tx.send(()).ok();
     })
     .expect("Error setting process termination handler");
-}
-
-/// Responds with the caller's name.
-///
-/// ```http
-/// GET /hello/name
-/// ```
-async fn hello(name: String) -> Result<impl Reply, Rejection> {
-    Ok(format!("Hello, {}!", name))
-}
-
-/// Responds with the caller's name.
-///
-/// ```http
-/// GET /hello/name
-/// ```
-async fn slow() -> Result<impl Reply, Rejection> {
-    tokio::time::sleep(Duration::from_secs(5)).await;
-    Ok(format!("That was slow."))
 }

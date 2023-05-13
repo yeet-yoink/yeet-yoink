@@ -2,4 +2,4 @@
 
 mod metrics;
 
-pub use metrics::HttpCallMetrics;
+pub use metrics::{HttpCallMetrics, HttpCallMetricsLayer};

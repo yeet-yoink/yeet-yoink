@@ -47,6 +47,10 @@ sequenceDiagram
 
 ## HTTP API
 
+### Storing Files
+
+* `/yeet` - Hands a file over to the service for storage.
+
 ### Metrics
 
 * `/metrics` - Produces metrics in Prometheus/OpenMetrics format.

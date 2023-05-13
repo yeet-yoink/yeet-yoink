@@ -3,40 +3,53 @@ use hyper::{Request, StatusCode, Version};
 use pin_project::pin_project;
 
 use crate::metrics::http::HttpMetrics;
+use axum::body::BoxBody;
+use axum::http::Response;
+use axum::response::IntoResponse;
+use hyper::body::HttpBody;
 use std::cell::Cell;
 use std::future::Future;
-use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::time::Instant;
+use tower::Layer;
 use tracing::debug;
 
 /// A middleware for call metrics. Uses [`HttpMetrics`].
 #[derive(Clone)]
-pub struct HttpCallMetrics<S, O> {
+pub struct HttpCallMetrics<S> {
     inner: S,
-    _phantom: PhantomData<O>,
 }
 
-impl<S, O> HttpCallMetrics<S, O> {
+/// A layer for call metrics. Uses [`HttpCallMetrics`].
+#[derive(Clone, Default)]
+pub struct HttpCallMetricsLayer;
+
+impl<S> HttpCallMetrics<S> {
     /// Creates a new [`HttpCallMetrics`]
     pub fn new(inner: S) -> Self {
-        Self {
-            inner,
-            _phantom: PhantomData::default(),
-        }
+        Self { inner }
     }
 }
 
-impl<S, B, O> Service<Request<B>> for HttpCallMetrics<S, O>
+impl<S> Layer<S> for HttpCallMetricsLayer {
+    type Service = HttpCallMetrics<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        HttpCallMetrics::new(inner)
+    }
+}
+
+impl<S, B> Service<Request<B>> for HttpCallMetrics<S>
 where
     S: Service<Request<B>>,
-    S::Response: Into<hyper::Response<O>>,
+    S::Response: IntoResponse,
+    B: HttpBody,
 {
-    type Response = hyper::Response<O>;
+    type Response = Response<BoxBody>;
     type Error = S::Error;
-    type Future = HttpCallMetricsFuture<S::Future, O, Self::Error>;
+    type Future = HttpCallMetricsFuture<S::Future>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
@@ -57,30 +70,30 @@ where
 /// * `O` - The body type of the HTTP response enclosed in `Response<O>`.
 /// * `E` - The error type returned by the wrapped future.
 #[pin_project]
-pub struct HttpCallMetricsFuture<F, O, E> {
+pub struct HttpCallMetricsFuture<F>
+where
+    F: Future,
+{
     #[pin]
     future: F,
     tracker: HttpCallMetricTracker,
-    // Required to have the trait bounds accepted.
-    _phantom: PhantomData<(O, E)>,
 }
 
-impl<F, O, E> HttpCallMetricsFuture<F, O, E> {
+impl<F> HttpCallMetricsFuture<F>
+where
+    F: Future,
+{
     fn new(future: F, tracker: HttpCallMetricTracker) -> Self {
-        Self {
-            future,
-            tracker,
-            _phantom: PhantomData::default(),
-        }
+        Self { future, tracker }
     }
 }
 
-impl<F, R, O, E> Future for HttpCallMetricsFuture<F, O, E>
+impl<F, R, E> Future for HttpCallMetricsFuture<F>
 where
     F: Future<Output = Result<R, E>>,
-    R: Into<hyper::Response<O>>,
+    R: IntoResponse,
 {
-    type Output = Result<hyper::Response<O>, E>;
+    type Output = Result<Response<BoxBody>, E>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // Note that this method will be called at least twice.
@@ -92,7 +105,7 @@ where
 
         let result = match response {
             Ok(reply) => {
-                let response = reply.into();
+                let response = reply.into_response();
                 this.tracker
                     .set_state(ResultState::Result(response.status(), response.version()));
                 Ok(response)
