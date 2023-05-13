@@ -12,6 +12,7 @@ rust-version = "1.68.0"
 
 [dependencies]
 anyhow = "1.0.70"
+async-tempfile = "0.2.0"
 clap = { version = "4.2.4", features = ["env"] }
 ctrlc = { version = "3.2.5", features = ["termination"] }
 dotenvy = "0.15.7"
@@ -19,8 +20,10 @@ exitcode = "1.1.2"
 futures = "0.3.28"
 hyper = { version = "0.14.26", features = ["http1", "http2", "server", "h2"] }
 lazy_static = "1.4.0"
+md5 = "0.7.0"
 pin-project = "1.0.12"
 prometheus-client = "0.20.0"
+sha2 = "0.10.6"
 thiserror = "1.0.40"
 tokio = { version = "1.28.0", features = ["full"] }
 tokio-stream = { version = "0.1.14", features = ["net"] }

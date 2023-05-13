@@ -44,6 +44,7 @@ async fn main() -> ExitCode {
             let svc = warp::service(
                 hello
                     .or(slow)
+                    .or(filters::yeet_endpoint())
                     .or(filters::metrics_endpoint())
                     .or(filters::health_endpoints())
                     .or(filters::shutdown_endpoint(tx)),
