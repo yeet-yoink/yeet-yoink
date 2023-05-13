@@ -4,7 +4,6 @@ use crate::metrics::Metrics;
 use axum::body::HttpBody;
 use axum::routing::get;
 use axum::Router;
-use tracing::debug;
 
 pub trait MetricsRoutes {
     /// Provides an API for Prometheus/OpenMetrics metrics.
@@ -26,7 +25,5 @@ where
 }
 
 async fn render_metrics() -> String {
-    debug!("Serving metrics");
-    tokio::task::yield_now().await;
     Metrics::get().encode()
 }
