@@ -1,13 +1,18 @@
 //! Contains the `/yeet` endpoint filter.
 
+use crate::AppState;
 use async_tempfile::TempFile;
-use futures::Stream;
-use hyper::{HeaderMap, StatusCode};
+use axum::body::HttpBody;
+use axum::extract::BodyStream;
+use axum::response::{IntoResponse, Response};
+use axum::routing::{post, MethodRouter};
+use hyper::body::Buf;
+use hyper::StatusCode;
 use sha2::Digest;
 use std::convert::Infallible;
 use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;
-use tracing::{debug, info};
+use tracing::debug;
 
 const ROUTE: &'static str = "yeet";
 
@@ -16,37 +21,33 @@ const ROUTE: &'static str = "yeet";
 /// ```http
 /// GET /metrics
 /// ```
-pub fn yeet_endpoint() -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    warp::post()
-        .and(warp::path(ROUTE))
-        .and(warp::path::end())
-        .and(headers_cloned())
-        .and(stream())
-        .and_then(do_yeet)
+pub fn yeet_endpoint<S>() -> MethodRouter<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    post(do_yeet)
 }
 
-async fn do_yeet<S, B>(headers: HeaderMap, stream: S) -> Result<impl Reply, Infallible>
-where
-    S: Stream<Item = Result<B, warp::Error>> + StreamExt,
-    B: warp::Buf,
-{
-    info!("{:?}", headers);
+async fn do_yeet(mut stream: BodyStream) -> Result<Response, Infallible> {
+    // info!("{:?}", headers);
 
-    let content_length = headers.get("Content-Length");
-    let content_type = headers.get("Content-Type");
+    // TODO: https://docs.rs/axum/latest/axum/struct.TypedHeader.html
+
+    // TODO: let content_length = headers.get("Content-Length");
+    // TODO: let content_type = headers.get("Content-Type");
 
     // Add server-side validation if header is present.
-    let content_md5 = headers.get("Content-MD5");
+    // TODO: let content_md5 = headers.get("Content-MD5");
 
     // TODO: Allow capacity?
     let mut file = match TempFile::new().await {
         Ok(file) => file,
         Err(e) => {
-            return Ok(with_status(
-                format!("Failed to create temporary file: {e}"),
+            return Ok((
                 StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to create temporary file: {e}"),
             )
-            .into_response())
+                .into_response())
         }
     };
 
@@ -55,9 +56,9 @@ where
         file = file.file_path()
     );
 
-    if let Some(n) = content_length {
-        debug!("Expecting {value:?} bytes", value = n);
-    }
+    // if let Some(n) = content_length {
+    //    debug!("Expecting {value:?} bytes", value = n);
+    // }
 
     let mut stream = Box::pin(stream);
     let mut md5 = md5::Context::new();
@@ -68,11 +69,11 @@ where
         let mut data = match result {
             Ok(data) => data,
             Err(e) => {
-                return Ok(with_status(
-                    format!("Failed to obtain data from the read stream: {e}"),
+                return Ok((
                     StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to obtain data from the read stream: {e}"),
                 )
-                .into_response())
+                    .into_response())
             }
         };
 
@@ -88,11 +89,11 @@ where
                     data.advance(n);
                 }
                 Err(e) => {
-                    return Ok(with_status(
-                        format!("Failed to write to temporary file: {e}"),
+                    return Ok((
                         StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Failed to write to temporary file: {e}"),
                     )
-                    .into_response())
+                        .into_response())
                 }
             }
         }
@@ -100,11 +101,11 @@ where
         match file.sync_data().await {
             Ok(_) => {}
             Err(e) => {
-                return Ok(with_status(
-                    format!("Failed to flush data to temporary file: {e}"),
+                return Ok((
                     StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to flush data to temporary file: {e}"),
                 )
-                .into_response())
+                    .into_response())
             }
         }
 

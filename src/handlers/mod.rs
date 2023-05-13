@@ -3,9 +3,9 @@
 mod health;
 mod metrics;
 mod shutdown;
-// mod yeet;
+mod yeet;
 
 pub use health::HealthRoutes;
 pub use metrics::metrics_endpoint;
 pub use shutdown::shutdown_endpoint;
-// pub use yeet::yeet_endpoint;
+pub use yeet::yeet_endpoint;

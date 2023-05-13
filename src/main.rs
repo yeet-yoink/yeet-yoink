@@ -41,6 +41,7 @@ async fn main() -> ExitCode {
     let app = Router::new()
         .route("/metrics", handlers::metrics_endpoint())
         .route("/stop", handlers::shutdown_endpoint())
+        .route("/yeet", handlers::yeet_endpoint())
         .map_health_endpoints()
         .with_state(app_state)
         // .layer(services::HttpCallMetricsLayer::default());

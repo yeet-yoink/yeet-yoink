@@ -5,8 +5,6 @@ use axum::body::HttpBody;
 use axum::routing::{get, MethodRouter};
 use std::convert::Infallible;
 
-const ROUTE: &'static str = "metrics";
-
 /// Provides metrics.
 ///
 /// ```http
