@@ -45,8 +45,7 @@ async fn main() -> ExitCode {
         .map_yeet_endpoint()
         .map_health_endpoints()
         .with_state(app_state)
-        // .layer(services::HttpCallMetricsLayer::default());
-    ;
+        .layer(services::HttpCallMetricsLayer::default());
 
     let make_svc = app.into_make_service();
 
