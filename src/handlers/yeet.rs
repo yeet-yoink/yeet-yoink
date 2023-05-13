@@ -1,6 +1,7 @@
 //! Contains the `/yeet` endpoint filter.
 
 use crate::headers::ContentMd5;
+use crate::metrics::transfer::{TransferMethod, TransferMetrics};
 use async_tempfile::TempFile;
 use axum::body::HttpBody;
 use axum::extract::BodyStream;
@@ -129,6 +130,8 @@ async fn do_yeet(
 
     let md5 = md5.compute();
     let sha256 = sha256.finalize();
+
+    TransferMetrics::track(TransferMethod::Store, bytes_written);
 
     debug!(
         "Stream ended, buffered {bytes} bytes to disk; MD5 {md5:x}, SHA256 {sha256:x}",

@@ -1,6 +1,7 @@
 //! Contains metrics related code.
 
 pub mod http;
+pub mod transfer;
 
 use lazy_static::lazy_static;
 use prometheus_client::encoding::text::encode;
@@ -44,6 +45,7 @@ impl Metrics {
     fn new() -> Self {
         let mut metrics = <Registry>::default();
         http::register_http_requests(&mut metrics);
+        transfer::register_transfer_metrics(&mut metrics);
 
         Self { metrics }
     }
