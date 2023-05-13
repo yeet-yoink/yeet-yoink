@@ -1,5 +1,5 @@
 use crate::handlers::HealthRoutes;
-use axum::{Router, ServiceExt};
+use axum::Router;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use hyper::Server;
@@ -12,6 +12,7 @@ use tracing::{error, info, warn};
 
 mod commands;
 mod handlers;
+mod headers;
 mod health;
 mod logging;
 mod metrics;

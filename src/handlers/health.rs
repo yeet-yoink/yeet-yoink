@@ -38,7 +38,7 @@ where
     B: HttpBody + Send + 'static,
 {
     /// Builds the health handlers.
-    fn map_health_endpoints(mut self) -> Self
+    fn map_health_endpoints(self) -> Self
     where
         S: Clone + Send + Sync + 'static,
         B: HttpBody + Send + 'static,

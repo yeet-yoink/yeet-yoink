@@ -1,18 +1,20 @@
 //! Contains the `/yeet` endpoint filter.
 
-use crate::AppState;
+use crate::headers::ContentMd5;
 use async_tempfile::TempFile;
 use axum::body::HttpBody;
 use axum::extract::BodyStream;
+use axum::headers::{ContentLength, ContentType};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{post, MethodRouter};
+use axum::TypedHeader;
 use hyper::body::Buf;
 use hyper::StatusCode;
 use sha2::Digest;
 use std::convert::Infallible;
 use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;
-use tracing::debug;
+use tracing::{debug, trace};
 
 const ROUTE: &'static str = "yeet";
 
@@ -21,23 +23,32 @@ const ROUTE: &'static str = "yeet";
 /// ```http
 /// GET /metrics
 /// ```
-pub fn yeet_endpoint<S>() -> MethodRouter<S>
+pub fn yeet_endpoint<S, B>() -> MethodRouter<S, B>
 where
     S: Clone + Send + Sync + 'static,
+    B: HttpBody + Send + Sync + 'static,
+    axum::body::Bytes: From<<B as HttpBody>::Data>,
+    <B as HttpBody>::Error: std::error::Error + Send + Sync,
 {
     post(do_yeet)
 }
 
-async fn do_yeet(mut stream: BodyStream) -> Result<Response, Infallible> {
-    // info!("{:?}", headers);
+#[axum::debug_handler]
+async fn do_yeet(
+    content_length: Option<TypedHeader<ContentLength>>,
+    content_type: Option<TypedHeader<ContentType>>,
+    content_md5: Option<TypedHeader<ContentMd5>>,
+    mut stream: BodyStream,
+) -> Result<Response, Infallible> {
+    // TODO: Add server-side validation of MD5 value if header is present.
 
-    // TODO: https://docs.rs/axum/latest/axum/struct.TypedHeader.html
+    if let Some(TypedHeader(ContentLength(n))) = content_length {
+        trace!("Expecting {value} bytes", value = n);
+    }
 
-    // TODO: let content_length = headers.get("Content-Length");
-    // TODO: let content_type = headers.get("Content-Type");
-
-    // Add server-side validation if header is present.
-    // TODO: let content_md5 = headers.get("Content-MD5");
+    if let Some(TypedHeader(mime)) = content_type {
+        trace!("Expecting MIME type {value}", value = mime);
+    }
 
     // TODO: Allow capacity?
     let mut file = match TempFile::new().await {
@@ -55,10 +66,6 @@ async fn do_yeet(mut stream: BodyStream) -> Result<Response, Infallible> {
         "Buffering request payload to {file:?}",
         file = file.file_path()
     );
-
-    // if let Some(n) = content_length {
-    //    debug!("Expecting {value:?} bytes", value = n);
-    // }
 
     let mut stream = Box::pin(stream);
     let mut md5 = md5::Context::new();

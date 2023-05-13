@@ -1,7 +1,6 @@
 //! Contains the `/stop` endpoint filter.
 
 use crate::AppState;
-use axum::body::HttpBody;
 use axum::extract::State;
 use axum::routing::{post, MethodRouter};
 use tracing::warn;

@@ -13,7 +13,8 @@ rust-version = "1.68.0"
 [dependencies]
 anyhow = "1.0.70"
 async-tempfile = "0.2.0"
-axum = { version = "0.6.18", features = ["http2", "headers"] }
+axum = { version = "0.6.18", features = ["http2", "headers", "macros"] }
+base64 = "0.21.0"
 clap = { version = "4.2.4", features = ["env"] }
 ctrlc = { version = "3.2.5", features = ["termination"] }
 dotenvy = "0.15.7"
