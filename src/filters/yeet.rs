@@ -63,6 +63,7 @@ where
     }
 
     let mut stream = Box::pin(stream);
+    let mut md5_context = md5::Context::new();
 
     let mut bytes_written = 0;
     while let Some(result) = stream.next().await {
@@ -78,10 +79,14 @@ where
         };
 
         while data.has_remaining() {
-            match file.write_buf(&mut data).await {
+            let chunk = data.chunk();
+            md5_context.consume(chunk);
+
+            match file.write(&chunk).await {
                 Ok(0) => {}
                 Ok(n) => {
                     bytes_written += n;
+                    data.advance(n);
                 }
                 Err(e) => {
                     return Ok(with_status(
@@ -93,7 +98,7 @@ where
             }
         }
 
-        match file.flush().await {
+        match file.sync_data().await {
             Ok(_) => {}
             Err(e) => {
                 return Ok(with_status(
@@ -106,9 +111,13 @@ where
 
         // TODO: Wake up consumers
     }
+
+    let md5 = md5_context.compute();
+
     debug!(
-        "Stream ended, buffered {bytes} bytes to disk",
-        bytes = bytes_written
+        "Stream ended, buffered {bytes} bytes to disk; MD5 {digest:x}",
+        bytes = bytes_written,
+        digest = md5
     );
 
     Ok("".into_response())
