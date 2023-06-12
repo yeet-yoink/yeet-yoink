@@ -1045,6 +1045,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "shared-files"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "295ca35c1542a3509c8302b9734339d428026e26ca32023639596593ace4e4c1"
+dependencies = [
+ "async-tempfile",
+ "crossbeam",
+ "pin-project",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "signal-hook-registry"
 version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1544,6 +1558,7 @@ dependencies = [
  "pin-project",
  "prometheus-client",
  "sha2",
+ "shared-files",
  "thiserror",
  "tokio",
  "tokio-stream",

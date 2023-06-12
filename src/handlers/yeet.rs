@@ -2,7 +2,6 @@
 
 use crate::headers::ContentMd5;
 use crate::metrics::transfer::{TransferMethod, TransferMetrics};
-use crate::wrapped_temporary::SharedTemporaryFile;
 use axum::body::HttpBody;
 use axum::extract::BodyStream;
 use axum::headers::{ContentLength, ContentType};
@@ -12,6 +11,7 @@ use axum::{Router, TypedHeader};
 use hyper::body::Buf;
 use hyper::StatusCode;
 use sha2::Digest;
+use shared_files::SharedTemporaryFile;
 use std::convert::Infallible;
 use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;
