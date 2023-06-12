@@ -164,5 +164,9 @@ async fn do_yeet(
         sha256 = sha256
     );
 
+    // TODO: Add test for slow writing and simultaneous reading.
+    // let reader = file.reader().await.unwrap();
+    // let size = reader.file_size();
+
     Ok("".into_response())
 }
