@@ -17,6 +17,7 @@ mod health;
 mod logging;
 mod metrics;
 mod services;
+mod wrapped_temporary;
 
 #[derive(Clone)]
 pub struct AppState {

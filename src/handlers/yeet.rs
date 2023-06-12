@@ -2,7 +2,7 @@
 
 use crate::headers::ContentMd5;
 use crate::metrics::transfer::{TransferMethod, TransferMetrics};
-use async_tempfile::TempFile;
+use crate::wrapped_temporary::SharedTemporaryFile;
 use axum::body::HttpBody;
 use axum::extract::BodyStream;
 use axum::headers::{ContentLength, ContentType};
@@ -60,7 +60,7 @@ async fn do_yeet(
     }
 
     // TODO: Allow capacity?
-    let mut file = match TempFile::new().await {
+    let file = match SharedTemporaryFile::new().await {
         Ok(file) => file,
         Err(e) => {
             return Ok((
@@ -71,9 +71,20 @@ async fn do_yeet(
         }
     };
 
+    let mut writer = match file.writer().await {
+        Ok(file) => file,
+        Err(e) => {
+            return Ok((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to create a writer for the temporary file: {e}"),
+            )
+                .into_response())
+        }
+    };
+
     debug!(
         "Buffering request payload to {file:?}",
-        file = file.file_path()
+        file = file.file_path().await
     );
 
     let mut stream = Box::pin(stream);
@@ -98,7 +109,7 @@ async fn do_yeet(
             md5.consume(chunk);
             sha256.update(chunk);
 
-            match file.write(&chunk).await {
+            match writer.write(&chunk).await {
                 Ok(0) => {}
                 Ok(n) => {
                     bytes_written += n;
@@ -114,7 +125,7 @@ async fn do_yeet(
             }
         }
 
-        match file.sync_data().await {
+        match writer.sync_data().await {
             Ok(_) => {}
             Err(e) => {
                 return Ok((
@@ -127,6 +138,19 @@ async fn do_yeet(
 
         // TODO: Wake up consumers
     }
+
+    // The file was already synced to disk in the last iteration, so
+    // we can skip the sync here.
+    match writer.complete_no_sync() {
+        Ok(_) => {}
+        Err(e) => {
+            return Ok((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to complete writing to temporary file: {e}"),
+            )
+                .into_response())
+        }
+    };
 
     let md5 = md5.compute();
     let sha256 = sha256.finalize();
