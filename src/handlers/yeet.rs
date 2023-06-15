@@ -11,7 +11,7 @@ use axum::{Router, TypedHeader};
 use hyper::body::Buf;
 use hyper::StatusCode;
 use sha2::Digest;
-use shared_files::SharedTemporaryFile;
+use shared_files::{SharedTemporaryFile, prelude::*};
 use std::convert::Infallible;
 use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;
@@ -60,7 +60,7 @@ async fn do_yeet(
     }
 
     // TODO: Allow capacity?
-    let file = match SharedTemporaryFile::new().await {
+    let file = match SharedTemporaryFile::new_async().await {
         Ok(file) => file,
         Err(e) => {
             return Ok((
@@ -84,7 +84,7 @@ async fn do_yeet(
 
     debug!(
         "Buffering request payload to {file:?}",
-        file = file.file_path().await
+        file = file.file_path()
     );
 
     let mut stream = Box::pin(stream);
