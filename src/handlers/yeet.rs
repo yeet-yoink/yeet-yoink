@@ -12,7 +12,6 @@ use axum::routing::post;
 use axum::{Router, TypedHeader};
 use hyper::body::Buf;
 use hyper::StatusCode;
-use sha2::Digest;
 use std::convert::Infallible;
 use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;

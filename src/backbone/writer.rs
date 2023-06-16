@@ -1,6 +1,5 @@
 use crate::backbone::file_hashes::FileHashes;
 use crate::backbone::hash::{HashMd5, HashSha256};
-use sha2::Digest;
 use shared_files::{CompleteWritingError, SharedTemporaryFileWriter};
 use std::io::{Error, ErrorKind, IoSlice};
 use std::pin::Pin;
@@ -9,6 +8,7 @@ use tokio::io::AsyncWrite;
 use tracing::debug;
 use uuid::Uuid;
 
+/// A write accessor for a temporary file.
 pub struct Writer {
     inner: Option<SharedTemporaryFileWriter>,
     md5: HashMd5,
@@ -61,6 +61,7 @@ impl Writer {
     }
 }
 
+#[allow(dead_code)]
 pub enum CompletionMode {
     Sync,
     NoSync,
@@ -113,9 +114,9 @@ impl AsyncWrite for Writer {
     }
 
     fn poll_write_vectored(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        bufs: &[IoSlice<'_>],
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        _bufs: &[IoSlice<'_>],
     ) -> Poll<Result<usize, Error>> {
         unimplemented!("Due to hashing, vectored writing is unsupported")
     }
