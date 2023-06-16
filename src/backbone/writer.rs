@@ -1,26 +1,29 @@
 use crate::backbone::file_hashes::FileHashes;
 use crate::backbone::hash::{HashMd5, HashSha256};
-use crate::backbone::writer_guard::WriteResult;
 use shared_files::{CompleteWritingError, SharedTemporaryFileWriter};
 use std::io::{Error, ErrorKind, IoSlice};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::io::AsyncWrite;
-use tokio::sync::oneshot::Sender;
 use tracing::debug;
 use uuid::Uuid;
 
 /// A write accessor for a temporary file.
+///
+/// ## Remarks
+///
+/// This writer will be protected by a [`WriterGuard`](crate::backbone::writer_guard::WriterGuard)
+/// ensuring that regardless of whether this writer is finalized or dropped without finalization,
+/// the [`Backbone`](crate::backbone::Backbone) is informed about it.
 pub struct Writer {
     inner: Option<SharedTemporaryFileWriter>,
-    sender: Sender<WriteResult>,
     md5: HashMd5,
     sha256: HashSha256,
 }
 
 impl Writer {
-    pub fn new(id: &Uuid, inner: SharedTemporaryFileWriter, sender: Sender<WriteResult>) -> Self {
+    pub fn new(id: &Uuid, inner: SharedTemporaryFileWriter) -> Self {
         debug!(
             "Buffering payload for request {id} to {file:?}",
             file = inner.file_path()
@@ -28,7 +31,6 @@ impl Writer {
 
         Self {
             inner: Some(inner),
-            sender,
             md5: HashMd5::new(),
             sha256: HashSha256::new(),
         }
@@ -56,31 +58,7 @@ impl Writer {
         let sha256 = self.sha256.finalize();
         let hashes = Arc::new(FileHashes { sha256, md5 });
 
-        // Send the hashes back to the backbone.
-        if self
-            .sender
-            .send(WriteResult::Success(hashes.clone()))
-            .is_err()
-        {
-            return Err(FinalizationError::BackboneCommunicationFailed);
-        }
-
         Ok(hashes)
-    }
-
-    /// Signal a failure to the backbone.
-    ///
-    /// ## Remarks
-    ///
-    /// Since [`finalize`](Self::finalize) consumes self, this method
-    /// cannot be used if the operation was successful. Likewise, since
-    /// this method consumes self, [`finalize`](Self::finalize) cannot be
-    /// called afterwards.
-    pub fn fail(self) {
-        self.sender
-            .send(WriteResult::Failure)
-            .map_err(move |_| {}) // discard the error
-            .expect("failed to send the failure event");
     }
 
     fn update_hashes(&mut self, buf: &[u8]) {

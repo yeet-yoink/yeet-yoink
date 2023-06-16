@@ -110,8 +110,6 @@ async fn do_yeet(
                     .into_response())
             }
         }
-
-        // TODO: Wake up consumers
     }
 
     // The file was already synced to disk in the last iteration, so

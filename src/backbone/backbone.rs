@@ -1,5 +1,5 @@
 use crate::backbone::writer::Writer;
-use crate::backbone::writer_guard::WriterGuard;
+use crate::backbone::writer_guard::{WriteResult, WriterGuard};
 use async_tempfile::TempFile;
 use axum::response::{IntoResponse, Response};
 use hyper::StatusCode;
@@ -7,6 +7,7 @@ use shared_files::{SharedFileWriter, SharedTemporaryFile};
 use std::borrow::Borrow;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use tokio::sync::oneshot::Receiver;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -16,7 +17,13 @@ use uuid::Uuid;
 #[derive(Default)]
 pub struct Backbone {
     // TODO: Add a temporal lease to the file.
-    open: RwLock<HashMap<Uuid, SharedTemporaryFile>>,
+    open: RwLock<HashMap<Uuid, FileRecord>>,
+}
+
+struct FileRecord {
+    file: SharedTemporaryFile,
+    // TODO: Do something to the record when the results come in or fail
+    channel: Receiver<WriteResult>,
 }
 
 impl Backbone {
@@ -28,6 +35,8 @@ impl Backbone {
         let writer = Self::create_writer_for_file(&file).await?;
 
         let mut map = self.open.write().await;
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+
         match map.entry(id) {
             Entry::Occupied(_) => {
                 // TODO: Actively mark the file as failed? This could invalidate all readers and writers.
@@ -35,12 +44,14 @@ impl Backbone {
                 drop(file);
                 return Err(Error::InternalErrorMayRetry);
             }
-            Entry::Vacant(v) => v.insert(file),
+            Entry::Vacant(v) => v.insert(FileRecord {
+                file,
+                channel: receiver,
+            }),
         };
 
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-
-        Ok(WriterGuard::new(Writer::new(&id, writer, sender)))
+        let writer = Writer::new(&id, writer);
+        Ok(WriterGuard::new(writer, sender))
     }
 
     /// Removes an entry.
