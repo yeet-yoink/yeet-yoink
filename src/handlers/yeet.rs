@@ -1,5 +1,6 @@
 //! Contains the `/yeet` endpoint filter.
 
+use crate::backbone::CompletionMode;
 use crate::headers::ContentMd5;
 use crate::metrics::transfer::{TransferMethod, TransferMetrics};
 use crate::AppState;
@@ -67,11 +68,6 @@ async fn do_yeet(
         Err(e) => return Ok(e.into()),
     };
 
-    debug!(
-        "Buffering payload for request {id} to {file:?}",
-        file = writer.file_path()
-    );
-
     let mut stream = Box::pin(stream);
     let mut md5 = md5::Context::new();
     let mut sha256 = sha2::Sha256::new();
@@ -126,7 +122,7 @@ async fn do_yeet(
 
     // The file was already synced to disk in the last iteration, so
     // we can skip the sync here.
-    match writer.complete_no_sync() {
+    match writer.finalize(CompletionMode::NoSync).await {
         Ok(_) => {}
         Err(e) => {
             return Ok((
