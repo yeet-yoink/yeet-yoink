@@ -5,7 +5,6 @@ use shared_files::{SharedFileWriter, SharedTemporaryFile, SharedTemporaryFileWri
 use std::borrow::Borrow;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -15,7 +14,7 @@ use uuid::Uuid;
 #[derive(Default)]
 pub struct Backbone {
     // TODO: Add a temporal lease to the file.
-    open: Arc<RwLock<HashMap<Uuid, SharedTemporaryFile>>>,
+    open: RwLock<HashMap<Uuid, SharedTemporaryFile>>,
 }
 
 impl Backbone {
