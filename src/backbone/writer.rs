@@ -1,11 +1,9 @@
 use crate::backbone::file_hashes::FileHashes;
 use crate::backbone::hash::{HashMd5, HashSha256};
 use shared_files::{CompleteWritingError, SharedTemporaryFileWriter};
-use std::io::{Error, ErrorKind, IoSlice};
-use std::pin::Pin;
+use std::io::{Error, ErrorKind};
 use std::sync::Arc;
-use std::task::{Context, Poll};
-use tokio::io::AsyncWrite;
+use tokio::io::AsyncWriteExt;
 use tracing::debug;
 use uuid::Uuid;
 
@@ -17,7 +15,7 @@ use uuid::Uuid;
 /// ensuring that regardless of whether this writer is finalized or dropped without finalization,
 /// the [`Backbone`](crate::backbone::Backbone) is informed about it.
 pub struct Writer {
-    inner: Option<SharedTemporaryFileWriter>,
+    inner: SharedTemporaryFileWriter,
     md5: HashMd5,
     sha256: HashSha256,
 }
@@ -30,28 +28,28 @@ impl Writer {
         );
 
         Self {
-            inner: Some(inner),
+            inner,
             md5: HashMd5::new(),
             sha256: HashSha256::new(),
         }
     }
 
+    pub async fn write(&mut self, chunk: &[u8]) -> std::io::Result<usize> {
+        self.update_hashes(chunk);
+        self.inner.write(chunk).await
+    }
+
     pub async fn sync_data(&self) -> Result<(), SynchronizationError> {
-        let inner = self
-            .inner
-            .as_ref()
-            .ok_or(SynchronizationError::FileClosed)?;
-        Ok(inner.sync_data().await?)
+        Ok(self.inner.sync_data().await?)
     }
 
     pub async fn finalize(
-        mut self,
+        self,
         mode: CompletionMode,
     ) -> Result<Arc<FileHashes>, FinalizationError> {
-        let inner = self.inner.take().ok_or(FinalizationError::FileClosed)?;
         match mode {
-            CompletionMode::Sync => inner.complete().await?,
-            CompletionMode::NoSync => inner.complete_no_sync()?,
+            CompletionMode::Sync => self.inner.complete().await?,
+            CompletionMode::NoSync => self.inner.complete_no_sync()?,
         }
 
         let md5 = self.md5.finalize();
@@ -79,8 +77,6 @@ pub enum CompletionMode {
 
 #[derive(Debug, thiserror::Error)]
 pub enum FinalizationError {
-    #[error("The file was already closed")]
-    FileClosed,
     #[error("Syncing the file to disk failed")]
     FileSyncFailed(#[from] CompleteWritingError),
     #[error("Failed to communicate to the backbone")]
@@ -89,53 +85,6 @@ pub enum FinalizationError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SynchronizationError {
-    #[error("The file was already closed")]
-    FileClosed,
     #[error("Syncing the file to disk failed")]
     FileSyncFailed(#[from] CompleteWritingError),
-}
-
-impl AsyncWrite for Writer {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<Result<usize, Error>> {
-        self.update_hashes(&buf);
-        if let Some(ref mut writer) = self.inner.as_mut() {
-            Pin::new(writer).poll_write(cx, buf)
-        } else {
-            Poll::Ready(err_broken_pipe())
-        }
-    }
-
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
-        if let Some(ref mut writer) = self.inner.as_mut() {
-            Pin::new(writer).poll_flush(cx)
-        } else {
-            Poll::Ready(err_broken_pipe())
-        }
-    }
-
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
-        if let Some(ref mut writer) = self.inner.as_mut() {
-            Pin::new(writer).poll_shutdown(cx)
-        } else {
-            Poll::Ready(err_broken_pipe())
-        }
-    }
-
-    fn poll_write_vectored(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-        _bufs: &[IoSlice<'_>],
-    ) -> Poll<Result<usize, Error>> {
-        unimplemented!("Due to hashing, vectored writing is unsupported")
-    }
-
-    fn is_write_vectored(&self) -> bool {
-        // We don't, but we need the poll_write_vectored method to be called
-        // so that we can report an error.
-        true
-    }
 }

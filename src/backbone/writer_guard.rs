@@ -1,12 +1,8 @@
 use crate::backbone::file_hashes::FileHashes;
 use crate::backbone::writer::{err_broken_pipe, FinalizationError, Writer};
 use crate::backbone::CompletionMode;
-use std::io::{Error, IoSlice};
 use std::ops::{Deref, DerefMut};
-use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
-use tokio::io::AsyncWrite;
 use tokio::sync::oneshot::Sender;
 
 /// A writer guard to communicate back to the [`Backbone`](crate::backbone::Backbone);
@@ -35,13 +31,21 @@ impl WriterGuard {
         }
     }
 
+    pub async fn write(&mut self, chunk: &[u8]) -> std::io::Result<usize> {
+        if let Some(ref mut writer) = self.inner {
+            writer.write(chunk).await
+        } else {
+            err_broken_pipe()
+        }
+    }
+
     pub async fn finalize(
         mut self,
         mode: CompletionMode,
     ) -> Result<Arc<FileHashes>, FinalizationError> {
         if let Some(writer) = self.inner.take() {
             let hashes = writer.finalize(mode).await?;
-            self.try_succeed(&hashes)?;
+            self.try_signal_success(&hashes)?;
             Ok(hashes)
         } else {
             Err(FinalizationError::BackboneCommunicationFailed)
@@ -49,7 +53,7 @@ impl WriterGuard {
     }
 
     /// Signal a success to the backbone.
-    fn try_succeed(mut self, hashes: &Arc<FileHashes>) -> Result<(), FinalizationError> {
+    fn try_signal_success(mut self, hashes: &Arc<FileHashes>) -> Result<(), FinalizationError> {
         // Send the hashes back to the backbone.
         match self.sender.take() {
             None => Err(FinalizationError::BackboneCommunicationFailed),
@@ -68,7 +72,7 @@ impl WriterGuard {
     /// cannot be used if the operation was successful. Likewise, since
     /// this method consumes self, [`finalize`](Self::finalize) cannot be
     /// called afterwards.
-    fn try_fail(&mut self) {
+    fn fail_if_not_already_closed(&mut self) {
         self.sender
             .take()
             .and_then(move |s| s.send(WriteResult::Failure).ok());
@@ -79,8 +83,7 @@ impl WriterGuard {
 /// the backbone in an uninformed state.
 impl Drop for WriterGuard {
     fn drop(&mut self) {
-        // This call can only actually fail if finalize wasn't called before.
-        self.try_fail()
+        self.fail_if_not_already_closed()
     }
 }
 
@@ -95,50 +98,5 @@ impl Deref for WriterGuard {
 impl DerefMut for WriterGuard {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.inner.as_mut().expect("failed to deref writer")
-    }
-}
-
-// Pass through to Writer.
-impl AsyncWrite for WriterGuard {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<Result<usize, Error>> {
-        if let Some(ref mut writer) = self.inner.as_mut() {
-            Pin::new(writer).poll_write(cx, buf)
-        } else {
-            Poll::Ready(err_broken_pipe())
-        }
-    }
-
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
-        if let Some(ref mut writer) = self.inner.as_mut() {
-            Pin::new(writer).poll_flush(cx)
-        } else {
-            Poll::Ready(err_broken_pipe())
-        }
-    }
-
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
-        if let Some(ref mut writer) = self.inner.as_mut() {
-            Pin::new(writer).poll_shutdown(cx)
-        } else {
-            Poll::Ready(err_broken_pipe())
-        }
-    }
-
-    fn poll_write_vectored(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-        _bufs: &[IoSlice<'_>],
-    ) -> Poll<Result<usize, Error>> {
-        unimplemented!("Due to hashing, vectored writing is unsupported")
-    }
-
-    fn is_write_vectored(&self) -> bool {
-        // We don't, but we need the poll_write_vectored method to be called
-        // so that we can report an error.
-        true
     }
 }
