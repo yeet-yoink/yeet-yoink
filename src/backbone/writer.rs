@@ -54,8 +54,22 @@ impl Writer {
             .finalize()
             .map_err(|e| FinalizationError::Sha256HashAlreadyCalculated(e))?;
 
-        todo!()
-        // Ok(FileHashes { sha256: sha256 })
+        Ok(FileHashes { sha256, md5 })
+    }
+
+    fn err_broken_pipe() -> Error {
+        Error::new(ErrorKind::BrokenPipe, "Writer closed")
+    }
+
+    fn update_hashes(&mut self, buf: &[u8]) -> Option<Poll<Result<usize, Error>>> {
+        if self.md5.update(buf).is_err() {
+            return Some(Poll::Ready(Err(Self::err_broken_pipe())));
+        }
+
+        if self.sha256.update(buf).is_err() {
+            return Some(Poll::Ready(Err(Self::err_broken_pipe())));
+        }
+        None
     }
 }
 
@@ -90,11 +104,14 @@ impl AsyncWrite for Writer {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, Error>> {
+        if let Some(poll_result) = self.update_hashes(&buf) {
+            return poll_result;
+        }
+
         if let Some(ref mut writer) = self.inner.as_mut() {
-            // TODO: Also write to the hashes
             Pin::new(writer).poll_write(cx, buf)
         } else {
-            Poll::Ready(Err(Error::new(ErrorKind::BrokenPipe, "Writer closed")))
+            Poll::Ready(Err(Self::err_broken_pipe()))
         }
     }
 
@@ -119,18 +136,10 @@ impl AsyncWrite for Writer {
         cx: &mut Context<'_>,
         bufs: &[IoSlice<'_>],
     ) -> Poll<Result<usize, Error>> {
-        if let Some(ref mut writer) = self.inner.as_mut() {
-            // TODO: Also write to the hashes
-            Pin::new(writer).poll_write_vectored(cx, bufs)
-        } else {
-            Poll::Ready(Err(Error::new(ErrorKind::BrokenPipe, "Writer closed")))
-        }
+        unimplemented!("Due to hashing, vectored writing is unsupported")
     }
 
     fn is_write_vectored(&self) -> bool {
-        match &self.inner {
-            None => false,
-            Some(inner) => inner.is_write_vectored(),
-        }
+        false
     }
 }
