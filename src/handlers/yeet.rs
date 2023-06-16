@@ -50,8 +50,6 @@ async fn do_yeet(
     State(state): State<AppState>,
     stream: BodyStream,
 ) -> Result<Response, Infallible> {
-    // TODO: Add server-side validation of MD5 value if header is present.
-
     if let Some(TypedHeader(ContentLength(n))) = content_length {
         trace!("Expecting {value} bytes", value = n);
     }
@@ -60,8 +58,10 @@ async fn do_yeet(
         trace!("Expecting MIME type {value}", value = mime);
     }
 
-    // TODO: Allow capacity?
     let id = Uuid::new_v4();
+
+    // TODO: Allow capacity?
+    // TODO: Add server-side validation of MD5 value if header is present.
     let mut writer = match state.backbone.new_file(id).await {
         Ok(writer) => writer,
         Err(e) => return Ok(e.into()),
@@ -116,6 +116,7 @@ async fn do_yeet(
 
     // The file was already synced to disk in the last iteration, so
     // we can skip the sync here.
+    // TODO: Add server-side validation of MD5 value if header is present.
     let hashes = match writer.finalize(CompletionMode::NoSync).await {
         Ok(hashes) => hashes,
         Err(e) => {

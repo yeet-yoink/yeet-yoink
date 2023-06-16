@@ -1,4 +1,5 @@
 use crate::backbone::writer::Writer;
+use crate::backbone::writer_guard::WriterGuard;
 use async_tempfile::TempFile;
 use axum::response::{IntoResponse, Response};
 use hyper::StatusCode;
@@ -20,7 +21,7 @@ pub struct Backbone {
 
 impl Backbone {
     /// Creates a new file buffer, registers it and returns a writer to it.
-    pub async fn new_file(&self, id: Uuid) -> Result<Writer, Error> {
+    pub async fn new_file(&self, id: Uuid) -> Result<WriterGuard, Error> {
         // We reuse the ID such that it is easier to find and debug the
         // created file if necessary.
         let file = Self::create_new_temporary_file(id).await?;
@@ -37,7 +38,9 @@ impl Backbone {
             Entry::Vacant(v) => v.insert(file),
         };
 
-        Ok(Writer::new(&id, writer))
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+
+        Ok(WriterGuard::new(Writer::new(&id, writer, sender)))
     }
 
     /// Removes an entry.

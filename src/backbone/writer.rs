@@ -1,22 +1,26 @@
 use crate::backbone::file_hashes::FileHashes;
 use crate::backbone::hash::{HashMd5, HashSha256};
+use crate::backbone::writer_guard::WriteResult;
 use shared_files::{CompleteWritingError, SharedTemporaryFileWriter};
 use std::io::{Error, ErrorKind, IoSlice};
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::io::AsyncWrite;
+use tokio::sync::oneshot::Sender;
 use tracing::debug;
 use uuid::Uuid;
 
 /// A write accessor for a temporary file.
 pub struct Writer {
     inner: Option<SharedTemporaryFileWriter>,
+    sender: Sender<WriteResult>,
     md5: HashMd5,
     sha256: HashSha256,
 }
 
 impl Writer {
-    pub fn new(id: &Uuid, inner: SharedTemporaryFileWriter) -> Self {
+    pub fn new(id: &Uuid, inner: SharedTemporaryFileWriter, sender: Sender<WriteResult>) -> Self {
         debug!(
             "Buffering payload for request {id} to {file:?}",
             file = inner.file_path()
@@ -24,6 +28,7 @@ impl Writer {
 
         Self {
             inner: Some(inner),
+            sender,
             md5: HashMd5::new(),
             sha256: HashSha256::new(),
         }
@@ -37,7 +42,10 @@ impl Writer {
         Ok(inner.sync_data().await?)
     }
 
-    pub async fn finalize(mut self, mode: CompletionMode) -> Result<FileHashes, FinalizationError> {
+    pub async fn finalize(
+        mut self,
+        mode: CompletionMode,
+    ) -> Result<Arc<FileHashes>, FinalizationError> {
         let inner = self.inner.take().ok_or(FinalizationError::FileClosed)?;
         match mode {
             CompletionMode::Sync => inner.complete().await?,
@@ -45,20 +53,44 @@ impl Writer {
         }
 
         let md5 = self.md5.finalize();
-
         let sha256 = self.sha256.finalize();
+        let hashes = Arc::new(FileHashes { sha256, md5 });
 
-        Ok(FileHashes { sha256, md5 })
+        // Send the hashes back to the backbone.
+        if self
+            .sender
+            .send(WriteResult::Success(hashes.clone()))
+            .is_err()
+        {
+            return Err(FinalizationError::BackboneCommunicationFailed);
+        }
+
+        Ok(hashes)
     }
 
-    fn err_broken_pipe() -> Error {
-        Error::new(ErrorKind::BrokenPipe, "Writer closed")
+    /// Signal a failure to the backbone.
+    ///
+    /// ## Remarks
+    ///
+    /// Since [`finalize`](Self::finalize) consumes self, this method
+    /// cannot be used if the operation was successful. Likewise, since
+    /// this method consumes self, [`finalize`](Self::finalize) cannot be
+    /// called afterwards.
+    pub fn fail(self) {
+        self.sender
+            .send(WriteResult::Failure)
+            .map_err(move |_| {}) // discard the error
+            .expect("failed to send the failure event");
     }
 
     fn update_hashes(&mut self, buf: &[u8]) {
         self.md5.update(buf);
         self.sha256.update(buf);
     }
+}
+
+pub(crate) fn err_broken_pipe<T>() -> Result<T, Error> {
+    Err(Error::new(ErrorKind::BrokenPipe, "Writer closed"))
 }
 
 #[allow(dead_code)]
@@ -73,6 +105,8 @@ pub enum FinalizationError {
     FileClosed,
     #[error("Syncing the file to disk failed")]
     FileSyncFailed(#[from] CompleteWritingError),
+    #[error("Failed to communicate to the backbone")]
+    BackboneCommunicationFailed,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -93,7 +127,7 @@ impl AsyncWrite for Writer {
         if let Some(ref mut writer) = self.inner.as_mut() {
             Pin::new(writer).poll_write(cx, buf)
         } else {
-            Poll::Ready(Err(Self::err_broken_pipe()))
+            Poll::Ready(err_broken_pipe())
         }
     }
 
@@ -101,7 +135,7 @@ impl AsyncWrite for Writer {
         if let Some(ref mut writer) = self.inner.as_mut() {
             Pin::new(writer).poll_flush(cx)
         } else {
-            Poll::Ready(Err(Error::new(ErrorKind::BrokenPipe, "Writer closed")))
+            Poll::Ready(err_broken_pipe())
         }
     }
 
@@ -109,7 +143,7 @@ impl AsyncWrite for Writer {
         if let Some(ref mut writer) = self.inner.as_mut() {
             Pin::new(writer).poll_shutdown(cx)
         } else {
-            Poll::Ready(Err(Error::new(ErrorKind::BrokenPipe, "Writer closed")))
+            Poll::Ready(err_broken_pipe())
         }
     }
 
@@ -122,6 +156,8 @@ impl AsyncWrite for Writer {
     }
 
     fn is_write_vectored(&self) -> bool {
-        false
+        // We don't, but we need the poll_write_vectored method to be called
+        // so that we can report an error.
+        true
     }
 }
