@@ -27,7 +27,7 @@ md5 = "0.7.0"
 pin-project = "1.1.0"
 prometheus-client = "0.21.1"
 sha2 = "0.10.7"
-shared-files = "0.0.4"
+shared-files = "0.0.5"
 thiserror = "1.0.40"
 tokio = { version = "1.28.2", features = ["full"] }
 tokio-stream = { version = "0.1.14", features = ["net"] }
