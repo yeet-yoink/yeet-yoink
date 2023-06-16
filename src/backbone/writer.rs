@@ -1,5 +1,5 @@
 use crate::backbone::file_hashes::FileHashes;
-use crate::backbone::hash::{HashFinalizationError, HashMd5, HashSha256};
+use crate::backbone::hash::{HashMd5, HashSha256};
 use sha2::Digest;
 use shared_files::{CompleteWritingError, SharedTemporaryFileWriter};
 use std::io::{Error, ErrorKind, IoSlice};
@@ -44,15 +44,9 @@ impl Writer {
             CompletionMode::NoSync => inner.complete_no_sync()?,
         }
 
-        let md5 = self
-            .md5
-            .finalize()
-            .map_err(|e| FinalizationError::Md5HashAlreadyCalculated(e))?;
+        let md5 = self.md5.finalize();
 
-        let sha256 = self
-            .sha256
-            .finalize()
-            .map_err(|e| FinalizationError::Sha256HashAlreadyCalculated(e))?;
+        let sha256 = self.sha256.finalize();
 
         Ok(FileHashes { sha256, md5 })
     }
@@ -61,15 +55,9 @@ impl Writer {
         Error::new(ErrorKind::BrokenPipe, "Writer closed")
     }
 
-    fn update_hashes(&mut self, buf: &[u8]) -> Option<Poll<Result<usize, Error>>> {
-        if self.md5.update(buf).is_err() {
-            return Some(Poll::Ready(Err(Self::err_broken_pipe())));
-        }
-
-        if self.sha256.update(buf).is_err() {
-            return Some(Poll::Ready(Err(Self::err_broken_pipe())));
-        }
-        None
+    fn update_hashes(&mut self, buf: &[u8]) {
+        self.md5.update(buf);
+        self.sha256.update(buf);
     }
 }
 
@@ -82,10 +70,6 @@ pub enum CompletionMode {
 pub enum FinalizationError {
     #[error("The file was already closed")]
     FileClosed,
-    #[error("The MD5 hash was already calculated")]
-    Md5HashAlreadyCalculated(HashFinalizationError),
-    #[error("The SHA-256 hash was already calculated")]
-    Sha256HashAlreadyCalculated(HashFinalizationError),
     #[error("Syncing the file to disk failed")]
     FileSyncFailed(#[from] CompleteWritingError),
 }
@@ -104,10 +88,7 @@ impl AsyncWrite for Writer {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, Error>> {
-        if let Some(poll_result) = self.update_hashes(&buf) {
-            return poll_result;
-        }
-
+        self.update_hashes(&buf);
         if let Some(ref mut writer) = self.inner.as_mut() {
             Pin::new(writer).poll_write(cx, buf)
         } else {
