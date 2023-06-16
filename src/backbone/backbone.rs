@@ -2,7 +2,7 @@ use crate::backbone::writer::Writer;
 use async_tempfile::TempFile;
 use axum::response::{IntoResponse, Response};
 use hyper::StatusCode;
-use shared_files::{SharedFileWriter, SharedTemporaryFile, SharedTemporaryFileWriter};
+use shared_files::{SharedFileWriter, SharedTemporaryFile};
 use std::borrow::Borrow;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;

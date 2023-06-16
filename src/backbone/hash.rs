@@ -44,7 +44,7 @@ enum Hash<T, D> {
     /// The hash is about to be computed.
     Computing(T),
     /// The hash was computed. Will never be instantiated.
-    Finalized(D),
+    _Finalized(std::convert::Infallible, D),
 }
 
 impl<T, D> Hash<T, D> {
@@ -61,7 +61,7 @@ impl<T, D> Hash<T, D> {
                 f(h);
                 Ok(())
             }
-            Hash::Finalized(_) => Err(HashFinalizationError::HashAlreadyFinalized),
+            Hash::_Finalized(_, _) => Err(HashFinalizationError::HashAlreadyFinalized),
         }
     }
 
@@ -71,7 +71,7 @@ impl<T, D> Hash<T, D> {
     {
         match self {
             Hash::Computing(h) => Ok(f(h)),
-            Hash::Finalized(_) => Err(HashFinalizationError::HashAlreadyFinalized),
+            Hash::_Finalized(_, _) => Err(HashFinalizationError::HashAlreadyFinalized),
         }
     }
 }
