@@ -1,3 +1,6 @@
+#![forbid(unused_must_use)]
+
+use crate::backbone::Backbone;
 use crate::handlers::*;
 use axum::Router;
 use futures::stream::FuturesUnordered;
@@ -5,11 +8,13 @@ use futures::StreamExt;
 use hyper::Server;
 use std::net::SocketAddr;
 use std::process::ExitCode;
+use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Sender;
 use tower::ServiceBuilder;
 use tracing::{error, info, warn};
 
+mod backbone;
 mod commands;
 mod handlers;
 mod headers;
@@ -21,6 +26,7 @@ mod services;
 #[derive(Clone)]
 pub struct AppState {
     shutdown_tx: Sender<()>,
+    backbone: Arc<Backbone>,
 }
 
 #[tokio::main]
@@ -37,6 +43,7 @@ async fn main() -> ExitCode {
 
     let app_state = AppState {
         shutdown_tx: shutdown_tx.clone(),
+        backbone: Arc::new(Backbone::default()),
     };
 
     let app = Router::new()

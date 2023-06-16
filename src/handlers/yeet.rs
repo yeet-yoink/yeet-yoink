@@ -2,8 +2,9 @@
 
 use crate::headers::ContentMd5;
 use crate::metrics::transfer::{TransferMethod, TransferMetrics};
+use crate::AppState;
 use axum::body::HttpBody;
-use axum::extract::BodyStream;
+use axum::extract::{BodyStream, State};
 use axum::headers::{ContentLength, ContentType};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
@@ -11,11 +12,11 @@ use axum::{Router, TypedHeader};
 use hyper::body::Buf;
 use hyper::StatusCode;
 use sha2::Digest;
-use shared_files::{SharedTemporaryFile, prelude::*};
 use std::convert::Infallible;
 use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;
 use tracing::{debug, trace};
+use uuid::Uuid;
 
 pub trait YeetRoutes {
     /// Provides an API for storing files.
@@ -30,9 +31,8 @@ pub trait YeetRoutes {
     fn map_yeet_endpoint(self) -> Self;
 }
 
-impl<S, B> YeetRoutes for Router<S, B>
+impl<B> YeetRoutes for Router<AppState, B>
 where
-    S: Clone + Send + Sync + 'static,
     B: HttpBody + Send + Sync + 'static,
     axum::body::Bytes: From<<B as HttpBody>::Data>,
     <B as HttpBody>::Error: std::error::Error + Send + Sync,
@@ -47,6 +47,7 @@ async fn do_yeet(
     content_length: Option<TypedHeader<ContentLength>>,
     content_type: Option<TypedHeader<ContentType>>,
     content_md5: Option<TypedHeader<ContentMd5>>,
+    State(state): State<AppState>,
     stream: BodyStream,
 ) -> Result<Response, Infallible> {
     // TODO: Add server-side validation of MD5 value if header is present.
@@ -60,31 +61,15 @@ async fn do_yeet(
     }
 
     // TODO: Allow capacity?
-    let file = match SharedTemporaryFile::new_async().await {
-        Ok(file) => file,
-        Err(e) => {
-            return Ok((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to create temporary file: {e}"),
-            )
-                .into_response())
-        }
-    };
-
-    let mut writer = match file.writer().await {
-        Ok(file) => file,
-        Err(e) => {
-            return Ok((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to create a writer for the temporary file: {e}"),
-            )
-                .into_response())
-        }
+    let id = Uuid::new_v4();
+    let mut writer = match state.backbone.new_file(id).await {
+        Ok(writer) => writer,
+        Err(e) => return Ok(e.into()),
     };
 
     debug!(
-        "Buffering request payload to {file:?}",
-        file = file.file_path()
+        "Buffering payload for request {id} to {file:?}",
+        file = writer.file_path()
     );
 
     let mut stream = Box::pin(stream);
@@ -167,6 +152,9 @@ async fn do_yeet(
     // TODO: Add test for slow writing and simultaneous reading.
     // let reader = file.reader().await.unwrap();
     // let size = reader.file_size();
+
+    // TODO: Temporary solution to remove the file.
+    state.backbone.remove(id).await;
 
     Ok("".into_response())
 }
