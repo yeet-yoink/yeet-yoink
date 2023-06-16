@@ -1,7 +1,8 @@
+use crate::backbone::writer::Writer;
 use async_tempfile::TempFile;
 use axum::response::{IntoResponse, Response};
 use hyper::StatusCode;
-use shared_files::{SharedFileWriter, SharedTemporaryFile, SharedTemporaryFileWriter};
+use shared_files::{SharedFileWriter, SharedTemporaryFile};
 use std::borrow::Borrow;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -19,7 +20,7 @@ pub struct Backbone {
 
 impl Backbone {
     /// Creates a new file buffer, registers it and returns a writer to it.
-    pub async fn new_file(&self, id: Uuid) -> Result<SharedTemporaryFileWriter, Error> {
+    pub async fn new_file(&self, id: Uuid) -> Result<Writer, Error> {
         // We reuse the ID such that it is easier to find and debug the
         // created file if necessary.
         let file = Self::create_new_temporary_file(id).await?;
@@ -36,7 +37,7 @@ impl Backbone {
             Entry::Vacant(v) => v.insert(file),
         };
 
-        Ok(writer)
+        Ok(Writer::new(&id, writer))
     }
 
     /// Removes an entry.

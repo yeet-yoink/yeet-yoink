@@ -21,6 +21,7 @@ ctrlc = { version = "3.4.0", features = ["termination"] }
 dotenvy = "0.15.7"
 exitcode = "1.1.2"
 futures = "0.3.28"
+hex = "0.4.3"
 hyper = { version = "0.14.26", features = ["http1", "http2", "server", "h2"] }
 lazy_static = "1.4.0"
 md5 = "0.7.0"

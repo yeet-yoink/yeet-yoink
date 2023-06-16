@@ -1,5 +1,6 @@
 //! Contains the `/yeet` endpoint filter.
 
+use crate::backbone::CompletionMode;
 use crate::headers::ContentMd5;
 use crate::metrics::transfer::{TransferMethod, TransferMetrics};
 use crate::AppState;
@@ -11,7 +12,6 @@ use axum::routing::post;
 use axum::{Router, TypedHeader};
 use hyper::body::Buf;
 use hyper::StatusCode;
-use sha2::Digest;
 use std::convert::Infallible;
 use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;
@@ -67,14 +67,7 @@ async fn do_yeet(
         Err(e) => return Ok(e.into()),
     };
 
-    debug!(
-        "Buffering payload for request {id} to {file:?}",
-        file = writer.file_path()
-    );
-
     let mut stream = Box::pin(stream);
-    let mut md5 = md5::Context::new();
-    let mut sha256 = sha2::Sha256::new();
 
     let mut bytes_written = 0;
     while let Some(result) = stream.next().await {
@@ -91,9 +84,6 @@ async fn do_yeet(
 
         while data.has_remaining() {
             let chunk = data.chunk();
-            md5.consume(chunk);
-            sha256.update(chunk);
-
             match writer.write(&chunk).await {
                 Ok(0) => {}
                 Ok(n) => {
@@ -126,8 +116,8 @@ async fn do_yeet(
 
     // The file was already synced to disk in the last iteration, so
     // we can skip the sync here.
-    match writer.complete_no_sync() {
-        Ok(_) => {}
+    let hashes = match writer.finalize(CompletionMode::NoSync).await {
+        Ok(hashes) => hashes,
         Err(e) => {
             return Ok((
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -137,16 +127,11 @@ async fn do_yeet(
         }
     };
 
-    let md5 = md5.compute();
-    let sha256 = sha256.finalize();
-
     TransferMetrics::track(TransferMethod::Store, bytes_written);
 
     debug!(
-        "Stream ended, buffered {bytes} bytes to disk; MD5 {md5:x}, SHA256 {sha256:x}",
-        bytes = bytes_written,
-        md5 = md5,
-        sha256 = sha256
+        "Stream ended, buffered {bytes} bytes to disk; {hashes}",
+        bytes = bytes_written
     );
 
     // TODO: Add test for slow writing and simultaneous reading.
