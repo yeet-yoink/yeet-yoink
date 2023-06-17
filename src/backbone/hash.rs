@@ -1,5 +1,5 @@
 use sha2::digest::consts::U32;
-use sha2::digest::generic_array::{ArrayLength, GenericArray};
+use sha2::digest::generic_array::GenericArray;
 use sha2::Digest;
 
 /// An MD5 hash.
@@ -38,8 +38,7 @@ impl HashSha256 {
     }
 
     pub fn finalize(self) -> Sha256Digest {
-        let mut hash = [0u8; 32];
-        let mut hash = GenericArray::from(hash);
+        let mut hash = GenericArray::from([0u8; 32]);
         self.0.finalize_into(&mut hash);
         hash
     }

@@ -21,7 +21,7 @@ pub enum WriteResult {
     /// The writer succeeded.
     Success(Arc<FileHashes>),
     /// The writer failed.
-    Failure,
+    Failed,
 }
 
 impl WriterGuard {
@@ -76,7 +76,7 @@ impl WriterGuard {
     fn fail_if_not_already_closed(&mut self) {
         self.sender
             .take()
-            .and_then(move |s| s.send(WriteResult::Failure).ok());
+            .and_then(move |s| s.send(WriteResult::Failed).ok());
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::backbone::file_record::FileRecord;
 use crate::backbone::writer::Writer;
-use crate::backbone::writer_guard::{WriteResult, WriterGuard};
+use crate::backbone::writer_guard::WriterGuard;
 use async_tempfile::TempFile;
 use axum::response::{IntoResponse, Response};
 use hyper::StatusCode;
@@ -8,7 +8,7 @@ use shared_files::{SharedFileWriter, SharedTemporaryFile};
 use std::borrow::Borrow;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use tokio::sync::RwLock;
+use tokio::sync::{oneshot, RwLock};
 use uuid::Uuid;
 
 /// A local file distribution manager.
@@ -29,7 +29,7 @@ impl Backbone {
         let writer = Self::create_writer_for_file(&file).await?;
 
         let mut map = self.open.write().await;
-        let (sender, receiver) = tokio::sync::oneshot::channel();
+        let (sender, receiver) = oneshot::channel();
 
         match map.entry(id) {
             Entry::Occupied(_) => {
