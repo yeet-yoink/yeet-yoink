@@ -16,6 +16,7 @@ pub struct WriterGuard {
 }
 
 /// A write result.
+#[derive(Debug)]
 pub enum WriteResult {
     /// The writer succeeded.
     Success(Arc<FileHashes>),

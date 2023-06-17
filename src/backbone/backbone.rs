@@ -1,3 +1,4 @@
+use crate::backbone::file_record::FileRecord;
 use crate::backbone::writer::Writer;
 use crate::backbone::writer_guard::{WriteResult, WriterGuard};
 use async_tempfile::TempFile;
@@ -7,7 +8,6 @@ use shared_files::{SharedFileWriter, SharedTemporaryFile};
 use std::borrow::Borrow;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use tokio::sync::oneshot::Receiver;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -18,12 +18,6 @@ use uuid::Uuid;
 pub struct Backbone {
     // TODO: Add a temporal lease to the file.
     open: RwLock<HashMap<Uuid, FileRecord>>,
-}
-
-struct FileRecord {
-    file: SharedTemporaryFile,
-    // TODO: Do something to the record when the results come in or fail
-    channel: Receiver<WriteResult>,
 }
 
 impl Backbone {
@@ -44,10 +38,7 @@ impl Backbone {
                 drop(file);
                 return Err(Error::InternalErrorMayRetry);
             }
-            Entry::Vacant(v) => v.insert(FileRecord {
-                file,
-                channel: receiver,
-            }),
+            Entry::Vacant(v) => v.insert(FileRecord::new(file, receiver)),
         };
 
         let writer = Writer::new(&id, writer);

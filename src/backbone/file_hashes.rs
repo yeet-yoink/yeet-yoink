@@ -1,4 +1,4 @@
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 
 /// The calculated hashes of a file.
 pub struct FileHashes {
@@ -6,6 +6,12 @@ pub struct FileHashes {
     pub md5: md5::Digest,
     /// The SHA-256 hash.
     pub sha256: [u8; 32], // TODO: Replace with GenericArray
+}
+
+impl Debug for FileHashes {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
 }
 
 impl Display for FileHashes {
