@@ -1,9 +1,11 @@
-use crate::backbone::file_hashes::FileHashes;
-use crate::backbone::file_writer::{err_broken_pipe, FileWriter, FinalizationError};
+use crate::backbone::file_writer::{err_broken_pipe, FileWriter, FinalizationError, WriteSummary};
 use crate::backbone::CompletionMode;
+use std::cell::Cell;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::oneshot::Sender;
+use tokio::time::Instant;
 
 /// A writer guard to communicate back to the [`Backbone`](crate::backbone::Backbone);
 ///
@@ -13,22 +15,24 @@ use tokio::sync::oneshot::Sender;
 pub struct FileWriterGuard {
     inner: Option<FileWriter>,
     sender: Option<Sender<WriteResult>>,
+    expiration: Duration,
 }
 
 /// A write result.
 #[derive(Debug)]
 pub enum WriteResult {
     /// The writer succeeded.
-    Success(Arc<FileHashes>),
+    Success(Arc<WriteSummary>),
     /// The writer failed.
     Failed,
 }
 
 impl FileWriterGuard {
-    pub fn new(writer: FileWriter, sender: Sender<WriteResult>) -> Self {
+    pub fn new(writer: FileWriter, sender: Sender<WriteResult>, expiration: Duration) -> Self {
         Self {
             inner: Some(writer),
             sender: Some(sender),
+            expiration,
         }
     }
 
@@ -43,22 +47,22 @@ impl FileWriterGuard {
     pub async fn finalize(
         mut self,
         mode: CompletionMode,
-    ) -> Result<Arc<FileHashes>, FinalizationError> {
+    ) -> Result<Arc<WriteSummary>, FinalizationError> {
         if let Some(writer) = self.inner.take() {
-            let hashes = writer.finalize(mode).await?;
-            self.try_signal_success(&hashes)?;
-            Ok(hashes)
+            let summary = writer.finalize(mode, self.expiration).await?;
+            self.try_signal_success(&summary)?;
+            Ok(summary)
         } else {
             Err(FinalizationError::BackboneCommunicationFailed)
         }
     }
 
     /// Signal a success to the backbone.
-    fn try_signal_success(mut self, hashes: &Arc<FileHashes>) -> Result<(), FinalizationError> {
+    fn try_signal_success(mut self, summary: &Arc<WriteSummary>) -> Result<(), FinalizationError> {
         // Send the hashes back to the backbone.
         match self.sender.take() {
             None => Err(FinalizationError::BackboneCommunicationFailed),
-            Some(sender) => match sender.send(WriteResult::Success(hashes.clone())) {
+            Some(sender) => match sender.send(WriteResult::Success(summary.clone())) {
                 Ok(_) => Ok(()),
                 Err(_) => Err(FinalizationError::BackboneCommunicationFailed),
             },

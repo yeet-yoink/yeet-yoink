@@ -9,9 +9,6 @@ use tokio::sync::{mpsc, RwLock};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-/// The duration for which to keep each file alive.
-const TEMPORAL_LEASE: Duration = Duration::from_secs(5 * 60);
-
 #[derive(Debug)]
 pub(crate) struct FileRecord;
 
@@ -26,6 +23,7 @@ impl FileRecord {
         file: SharedTemporaryFile,
         backbone_command: Sender<BackboneCommand>,
         writer_command: Receiver<WriteResult>,
+        duration: Duration,
     ) -> Self {
         let inner = Arc::new(RwLock::new(Inner { file: Some(file) }));
         let _ = tokio::spawn(Self::lifetime_handler(
@@ -33,6 +31,7 @@ impl FileRecord {
             inner.clone(),
             backbone_command,
             writer_command,
+            duration,
         ));
         Self {}
     }
@@ -49,11 +48,12 @@ impl FileRecord {
         mut inner: Arc<RwLock<Inner>>,
         backbone_command: mpsc::Sender<BackboneCommand>,
         writer_command: Receiver<WriteResult>,
+        duration: Duration,
     ) {
         // Before starting the timeout, wait for the write to the file to complete.
         match writer_command.await {
-            Ok(WriteResult::Success(hashes)) => {
-                info!("File writing completed: {}", hashes);
+            Ok(WriteResult::Success(summary)) => {
+                info!("File writing completed: {}", summary.hashes);
             }
             Ok(WriteResult::Failed) => {
                 warn!("Writing to the file failed");
@@ -79,7 +79,7 @@ impl FileRecord {
         }
 
         // Keep the file open for readers.
-        Self::apply_temporal_lease(&id, TEMPORAL_LEASE).await;
+        Self::apply_temporal_lease(&id, duration).await;
         info!("Read lease timed out for file {id}; removing it");
 
         // Gracefully close the file.

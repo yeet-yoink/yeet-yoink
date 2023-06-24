@@ -7,4 +7,4 @@ mod hash;
 
 pub use backbone::Backbone;
 pub use file_hashes::FileHashes;
-pub use file_writer::CompletionMode;
+pub use file_writer::{CompletionMode, WriteSummary};

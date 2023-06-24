@@ -3,7 +3,9 @@ use crate::backbone::hash::{HashMd5, HashSha256};
 use shared_files::{CompleteWritingError, SharedTemporaryFileWriter};
 use std::io::{Error, ErrorKind};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::AsyncWriteExt;
+use tokio::time::Instant;
 use tracing::debug;
 use uuid::Uuid;
 
@@ -46,7 +48,8 @@ impl FileWriter {
     pub async fn finalize(
         self,
         mode: CompletionMode,
-    ) -> Result<Arc<FileHashes>, FinalizationError> {
+        expiration: Duration,
+    ) -> Result<Arc<WriteSummary>, FinalizationError> {
         match mode {
             CompletionMode::Sync => self.inner.complete().await?,
             CompletionMode::NoSync => self.inner.complete_no_sync()?,
@@ -54,15 +57,27 @@ impl FileWriter {
 
         let md5 = self.md5.finalize();
         let sha256 = self.sha256.finalize();
-        let hashes = Arc::new(FileHashes { sha256, md5 });
+        let summary = Arc::new(WriteSummary {
+            expires: Instant::now() + expiration,
+            hashes: FileHashes { sha256, md5 },
+        });
 
-        Ok(hashes)
+        Ok(summary)
     }
 
     fn update_hashes(&mut self, buf: &[u8]) {
         self.md5.update(buf);
         self.sha256.update(buf);
     }
+}
+
+/// A write result.
+#[derive(Debug)]
+pub struct WriteSummary {
+    /// The instant at which the file will expire.
+    pub expires: Instant,
+    /// The file hashes.
+    pub hashes: FileHashes,
 }
 
 pub(crate) fn err_broken_pipe<T>() -> Result<T, Error> {

@@ -9,9 +9,13 @@ use std::borrow::Borrow;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, RwLock};
 use tracing::info;
 use uuid::Uuid;
+
+/// The duration for which to keep each file alive.
+pub const TEMPORAL_LEASE: Duration = Duration::from_secs(5 * 60);
 
 /// A local file distribution manager.
 ///
@@ -45,6 +49,8 @@ impl Backbone {
         let mut inner = self.inner.write().await;
         let (sender, receiver) = oneshot::channel();
 
+        let temporal_lease = TEMPORAL_LEASE;
+
         // This needs to happen synchronously so that the moment we return the writer,
         // we know the entry exists.
         match inner.open.entry(id) {
@@ -54,11 +60,17 @@ impl Backbone {
                 drop(file);
                 return Err(Error::InternalErrorMayRetry);
             }
-            Entry::Vacant(v) => v.insert(FileRecord::new(id, file, self.sender.clone(), receiver)),
+            Entry::Vacant(v) => v.insert(FileRecord::new(
+                id,
+                file,
+                self.sender.clone(),
+                receiver,
+                temporal_lease,
+            )),
         };
 
         let writer = FileWriter::new(&id, writer);
-        Ok(FileWriterGuard::new(writer, sender))
+        Ok(FileWriterGuard::new(writer, sender, temporal_lease))
     }
 
     /// Requests to remove an entry.
