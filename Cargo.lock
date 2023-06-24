@@ -1161,9 +1161,9 @@ dependencies = [
 
 [[package]]
 name = "shared-files"
-version = "0.0.6"
+version = "0.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8310b8e7675b6d9f6bf5f134b0fd9234a0f443391c0f40902309dc3cbfcd1df"
+checksum = "b0165ece4bb66e187a691f24e3eb27d7781132946f1b9dd4773e74142d1aac36"
 dependencies = [
  "async-tempfile",
  "async-trait",
@@ -1708,6 +1708,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "tower",
  "tracing",
  "tracing-subscriber",

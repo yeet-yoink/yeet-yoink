@@ -2,14 +2,16 @@
 
 use crate::backbone::GetReaderError;
 use crate::AppState;
-use axum::body::HttpBody;
+use axum::body::{HttpBody, StreamBody};
 use axum::extract::{Path, State};
-use axum::response::{IntoResponse, Response};
+use axum::http::header;
+use axum::response::{AppendHeaders, IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
 use hyper::StatusCode;
+use shared_files::FileSize;
 use shortguid::ShortGuid;
-use tracing::info;
+use tokio_util::io::ReaderStream;
 
 pub trait YoinkRoutes {
     /// Provides an API for storing files.
@@ -45,9 +47,28 @@ async fn do_yoink(
         Err(e) => return Ok(e.into()),
     };
 
-    info!("A yoink was attempted for ID {id}");
+    let mut headers = Vec::new();
+    if let FileSize::Exactly(size) = file.file_size() {
+        headers.push((header::CONTENT_LENGTH, size.to_string()));
+    }
 
-    todo!()
+    // TODO: Get ETAG / hashes
+    // headers.push((header::ETAG, ...));
+
+    // TODO: Store and retrieve the content type
+    headers.push((header::CONTENT_TYPE, "text/toml; charset=utf-8".into()));
+
+    // TODO: Store and retrieve the file name
+    headers.push((
+        header::CONTENT_DISPOSITION,
+        "attachment; filename=\"Cargo.toml\"".into(),
+    ));
+
+    let stream = ReaderStream::new(file);
+    let body = StreamBody::new(stream);
+
+    let headers = AppendHeaders(headers);
+    Ok((headers, body).into_response())
 }
 
 impl From<GetReaderError> for Response {
