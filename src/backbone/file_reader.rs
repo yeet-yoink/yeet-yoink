@@ -1,7 +1,9 @@
+use crate::backbone::WriteSummary;
 use axum::headers::ContentType;
 use shared_files::{FileSize, SharedTemporaryFileReader};
 use std::borrow::Cow;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::io::{AsyncRead, ReadBuf};
@@ -14,6 +16,7 @@ pub struct FileReader {
     content_type: Option<String>,
     created: Instant,
     expiration_duration: Duration,
+    pub summary: Option<Arc<WriteSummary>>,
 }
 
 impl FileReader {
@@ -22,13 +25,19 @@ impl FileReader {
         content_type: Option<ContentType>,
         created: Instant,
         expiration_duration: Duration,
+        summary: Option<Arc<WriteSummary>>,
     ) -> Self {
         Self {
             inner: reader,
             content_type: content_type.map(|c| c.to_string()),
             created,
             expiration_duration,
+            summary,
         }
+    }
+
+    pub fn summary(&self) -> &Option<Arc<WriteSummary>> {
+        &self.summary
     }
 
     pub fn expiration_date(&self) -> Instant {

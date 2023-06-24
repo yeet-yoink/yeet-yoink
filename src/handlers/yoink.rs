@@ -5,10 +5,11 @@ use crate::expiration_as_rfc1123;
 use crate::AppState;
 use axum::body::{HttpBody, StreamBody};
 use axum::extract::{Path, State};
-use axum::http::header;
+use axum::http::{header, HeaderName};
 use axum::response::{AppendHeaders, IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
+use base64::Engine;
 use hyper::StatusCode;
 use shared_files::FileSize;
 use shortguid::ShortGuid;
@@ -48,13 +49,35 @@ async fn do_yoink(
         Err(e) => return Ok(e.into()),
     };
 
+    let summary = file.summary();
+
     let mut headers = Vec::new();
     if let FileSize::Exactly(size) = file.file_size() {
         headers.push((header::CONTENT_LENGTH, size.to_string()));
     }
 
-    // TODO: Get ETAG / hashes
-    // headers.push((header::ETAG, ...));
+    // Add ETag from SHA-256 hash, etc.
+    if let Some(summary) = summary {
+        headers.push((
+            header::ETAG,
+            base64::engine::general_purpose::STANDARD.encode(&summary.hashes.sha256[..]),
+        ));
+
+        headers.push((
+            HeaderName::from_static("content-md5"),
+            base64::engine::general_purpose::STANDARD.encode(&summary.hashes.md5[..]),
+        ));
+
+        headers.push((
+            HeaderName::from_static("x-file-md5"),
+            hex::encode(&summary.hashes.md5[..]),
+        ));
+
+        headers.push((
+            HeaderName::from_static("x-file-sha256"),
+            hex::encode(&summary.hashes.sha256[..]),
+        ));
+    }
 
     if let Some(content_type) = file.content_type() {
         headers.push((header::CONTENT_TYPE, content_type.to_string()));

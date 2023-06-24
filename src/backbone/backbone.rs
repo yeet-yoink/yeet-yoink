@@ -103,6 +103,7 @@ impl Backbone {
                     file.content_type.clone(),
                     file.created,
                     file.expiration_duration,
+                    file.get_summary().await,
                 ))
             }
         }

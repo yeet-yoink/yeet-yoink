@@ -73,6 +73,12 @@ impl FileRecord {
         }
     }
 
+    /// Gets the file write summary or `None`, if the file writing hasn't completed yet.
+    pub async fn get_summary(&self) -> Option<Arc<WriteSummary>> {
+        let inner = self.inner.read().await;
+        inner.summary.clone()
+    }
+
     /// Controls the lifetime of the entry in the backbone.
     ///
     /// This method will:
