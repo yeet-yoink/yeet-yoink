@@ -1,6 +1,7 @@
 //! Contains the `/yeet` endpoint filter.
 
 use crate::backbone::{CompletionMode, FileHashes};
+use crate::expiration_as_rfc1123;
 use crate::metrics::transfer::{TransferMethod, TransferMetrics};
 use crate::AppState;
 use axum::body::HttpBody;
@@ -10,7 +11,6 @@ use axum::http::HeaderValue;
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::Router;
-use chrono::{DateTime, Utc};
 use headers_content_md5::ContentMd5;
 use hyper::body::Buf;
 use hyper::header::EXPIRES;
@@ -171,15 +171,6 @@ async fn do_yeet(
         .or_insert(HeaderValue::from_str(&expiration_date).expect("invalid time input provided"));
 
     Ok(response)
-}
-
-fn expiration_as_rfc1123(expires: &tokio::time::Instant) -> String {
-    let expire_in = expires.duration_since(tokio::time::Instant::now());
-    let expiration_date = std::time::SystemTime::now() + expire_in;
-    let expiration_date = DateTime::<Utc>::from(expiration_date);
-    expiration_date
-        .format("%a, %d %b %Y %H:%M:%S GMT")
-        .to_string()
 }
 
 #[derive(Serialize)]

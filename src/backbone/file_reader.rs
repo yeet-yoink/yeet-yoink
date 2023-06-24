@@ -13,6 +13,7 @@ pub struct FileReader {
     inner: SharedTemporaryFileReader,
     content_type: Option<String>,
     created: Instant,
+    expiration_duration: Duration,
 }
 
 impl FileReader {
@@ -20,12 +21,18 @@ impl FileReader {
         reader: SharedTemporaryFileReader,
         content_type: Option<ContentType>,
         created: Instant,
+        expiration_duration: Duration,
     ) -> Self {
         Self {
             inner: reader,
             content_type: content_type.map(|c| c.to_string()),
             created,
+            expiration_duration,
         }
+    }
+
+    pub fn expiration_date(&self) -> Instant {
+        self.created + self.expiration_duration
     }
 
     pub fn file_size(&self) -> FileSize {

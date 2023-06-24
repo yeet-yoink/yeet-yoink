@@ -1,6 +1,7 @@
 //! Contains the `/yoink` endpoint filter.
 
 use crate::backbone::GetReaderError;
+use crate::expiration_as_rfc1123;
 use crate::AppState;
 use axum::body::{HttpBody, StreamBody};
 use axum::extract::{Path, State};
@@ -66,6 +67,10 @@ async fn do_yoink(
         header::CONTENT_DISPOSITION,
         format!("attachment; filename=\"{id}\""),
     ));
+
+    // Provide expiration header.
+    let expiration_date = expiration_as_rfc1123(&file.expiration_date());
+    headers.push((header::EXPIRES, expiration_date));
 
     let stream = ReaderStream::new(file);
     let body = StreamBody::new(stream);

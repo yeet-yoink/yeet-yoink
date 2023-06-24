@@ -14,9 +14,14 @@ use tracing::{info, warn};
 
 #[derive(Debug)]
 pub(crate) struct FileRecord {
+    /// The ID of the file.
     pub id: ShortGuid,
+    /// The content type that was optionally specified during file creation.
     pub content_type: Option<ContentType>,
+    /// The time when the file was created.
     pub created: Instant,
+    /// The time after which the file will be inaccessible.
+    pub expiration_duration: Duration,
     inner: Arc<RwLock<Inner>>,
 }
 
@@ -52,6 +57,7 @@ impl FileRecord {
             inner,
             content_type,
             created,
+            expiration_duration: duration,
         }
     }
 

@@ -102,6 +102,7 @@ impl Backbone {
                     reader,
                     file.content_type.clone(),
                     file.created,
+                    file.expiration_duration,
                 ))
             }
         }
