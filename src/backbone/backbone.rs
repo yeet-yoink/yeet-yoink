@@ -5,6 +5,7 @@ use async_tempfile::TempFile;
 use axum::response::{IntoResponse, Response};
 use hyper::StatusCode;
 use shared_files::{SharedFileWriter, SharedTemporaryFile};
+use shortguid::ShortGuid;
 use std::borrow::Borrow;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -12,7 +13,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, RwLock};
 use tracing::info;
-use uuid::Uuid;
 
 /// The duration for which to keep each file alive.
 pub const TEMPORAL_LEASE: Duration = Duration::from_secs(5 * 60);
@@ -26,7 +26,7 @@ pub struct Backbone {
 }
 
 struct Inner {
-    open: HashMap<Uuid, FileRecord>,
+    open: HashMap<ShortGuid, FileRecord>,
 }
 
 impl Backbone {
@@ -40,7 +40,7 @@ impl Backbone {
     }
 
     /// Creates a new file buffer, registers it and returns a writer to it.
-    pub async fn new_file(&self, id: Uuid) -> Result<FileWriterGuard, Error> {
+    pub async fn new_file(&self, id: ShortGuid) -> Result<FileWriterGuard, Error> {
         // We reuse the ID such that it is easier to find and debug the
         // created file if necessary.
         let file = Self::create_new_temporary_file(id).await?;
@@ -79,15 +79,15 @@ impl Backbone {
     /// When the last reference is closed, the file will be removed.
     ///
     /// However, no new readers can be created after this point.
-    pub async fn remove<I: Borrow<Uuid>>(&self, id: I) {
+    pub async fn remove<I: Borrow<ShortGuid>>(&self, id: I) {
         self.sender
             .send(BackboneCommand::RemoveWriter(id.borrow().clone()))
             .await
             .ok();
     }
 
-    async fn create_new_temporary_file(id: Uuid) -> Result<SharedTemporaryFile, Error> {
-        SharedTemporaryFile::new_with_uuid(id)
+    async fn create_new_temporary_file(id: ShortGuid) -> Result<SharedTemporaryFile, Error> {
+        SharedTemporaryFile::new_with_uuid(id.into())
             .await
             .map_err(|e| Error::FailedCreatingFile(e))
     }
@@ -106,7 +106,7 @@ impl Backbone {
                 BackboneCommand::RemoveWriter(id) => {
                     info!("Removing file {id} from bookkeeping");
                     let mut inner = inner.write().await;
-                    inner.open.remove(id.borrow());
+                    inner.open.remove(&id);
                 }
                 BackboneCommand::ReadyForDistribution(id) => {
                     info!("The file {id} was buffered completely and can now be distributed")
@@ -131,9 +131,9 @@ pub enum BackboneCommand {
     ///
     /// Currently open writers or readers will continue to work.
     /// When the last reference is closed, the file will be removed.
-    RemoveWriter(Uuid),
+    RemoveWriter(ShortGuid),
     /// Marks the file ready for distribution to other backends.
-    ReadyForDistribution(Uuid),
+    ReadyForDistribution(ShortGuid),
 }
 
 #[derive(Debug, thiserror::Error)]

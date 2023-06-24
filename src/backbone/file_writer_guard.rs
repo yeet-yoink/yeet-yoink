@@ -1,11 +1,9 @@
 use crate::backbone::file_writer::{err_broken_pipe, FileWriter, FinalizationError, WriteSummary};
 use crate::backbone::CompletionMode;
-use std::cell::Cell;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::oneshot::Sender;
-use tokio::time::Instant;
 
 /// A writer guard to communicate back to the [`Backbone`](crate::backbone::Backbone);
 ///

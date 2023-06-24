@@ -2,17 +2,19 @@
 
 use crate::AppState;
 use axum::body::HttpBody;
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::response::Response;
 use axum::routing::get;
 use axum::Router;
 use hyper::StatusCode;
+use shortguid::ShortGuid;
+use tracing::info;
 
 pub trait YoinkRoutes {
     /// Provides an API for storing files.
     ///
     /// ```http
-    /// GET /yoink/e121b81c-c1f5-465f-949a-aca490b87d2a HTTP/1.1
+    /// GET /yoink/KmC6e8laTnK3dioUSMpM0Q HTTP/1.1
     /// Content-Length: 1024
     /// Content-Type: application/my-type
     ///
@@ -28,11 +30,16 @@ where
     <B as HttpBody>::Error: std::error::Error + Send + Sync,
 {
     fn map_yoink_endpoint(self) -> Self {
-        self.route("/yeet", get(do_yoink))
+        self.route("/yoink/:id", get(do_yoink))
     }
 }
 
 #[axum::debug_handler]
-async fn do_yoink(State(state): State<AppState>) -> Result<Response, StatusCode> {
+async fn do_yoink(
+    Path(id): Path<ShortGuid>,
+    State(state): State<AppState>,
+) -> Result<Response, StatusCode> {
+    info!("A yoink was attempted for ID {id}");
+
     todo!()
 }

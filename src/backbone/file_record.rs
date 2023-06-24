@@ -1,13 +1,13 @@
 use crate::backbone::backbone::BackboneCommand;
 use crate::backbone::file_writer_guard::WriteResult;
 use shared_files::SharedTemporaryFile;
+use shortguid::ShortGuid;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver;
 use tokio::sync::{mpsc, RwLock};
 use tracing::{info, warn};
-use uuid::Uuid;
 
 #[derive(Debug)]
 pub(crate) struct FileRecord;
@@ -19,7 +19,7 @@ struct Inner {
 
 impl FileRecord {
     pub fn new(
-        id: Uuid,
+        id: ShortGuid,
         file: SharedTemporaryFile,
         backbone_command: Sender<BackboneCommand>,
         writer_command: Receiver<WriteResult>,
@@ -44,7 +44,7 @@ impl FileRecord {
     /// - Apply a temporal lease to the file (keeping it alive for a certain time).
     /// - Remove the file from the registry after the time is over.
     async fn lifetime_handler(
-        id: Uuid,
+        id: ShortGuid,
         mut inner: Arc<RwLock<Inner>>,
         backbone_command: mpsc::Sender<BackboneCommand>,
         writer_command: Receiver<WriteResult>,
@@ -86,7 +86,7 @@ impl FileRecord {
         Self::remove_writer(id, backbone_command).await;
     }
 
-    async fn apply_temporal_lease(id: &Uuid, duration: Duration) {
+    async fn apply_temporal_lease(id: &ShortGuid, duration: Duration) {
         info!("File {id} will accept new readers for {duration:?}");
         tokio::time::sleep(duration).await
     }
@@ -96,7 +96,7 @@ impl FileRecord {
         inner.file.take();
     }
 
-    async fn remove_writer(id: Uuid, backbone_command: Sender<BackboneCommand>) {
+    async fn remove_writer(id: ShortGuid, backbone_command: Sender<BackboneCommand>) {
         if let Err(error) = backbone_command
             .send(BackboneCommand::RemoveWriter(id))
             .await

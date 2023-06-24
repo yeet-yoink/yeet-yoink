@@ -17,9 +17,9 @@ use hyper::body::Buf;
 use hyper::header::EXPIRES;
 use hyper::StatusCode;
 use serde::Serialize;
+use shortguid::ShortGuid;
 use tokio_stream::StreamExt;
 use tracing::{debug, trace};
-use uuid::Uuid;
 
 pub trait YeetRoutes {
     /// Provides an API for storing files.
@@ -61,7 +61,7 @@ async fn do_yeet(
         trace!("Expecting MIME type {value}", value = mime);
     }
 
-    let id = Uuid::new_v4();
+    let id = ShortGuid::new_random();
 
     // TODO: Allow capacity?
     // TODO: Add server-side validation of MD5 value if header is present.
@@ -165,7 +165,7 @@ fn expiration_as_rfc1123(expires: &tokio::time::Instant) -> String {
 
 #[derive(Serialize)]
 struct SuccessfulUploadResponse {
-    id: Uuid,
+    id: ShortGuid,
     hashes: Hashes,
 }
 

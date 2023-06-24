@@ -1,13 +1,13 @@
 use crate::backbone::file_hashes::FileHashes;
 use crate::backbone::hash::{HashMd5, HashSha256};
 use shared_files::{CompleteWritingError, SharedTemporaryFileWriter};
+use shortguid::ShortGuid;
 use std::io::{Error, ErrorKind};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::time::Instant;
 use tracing::debug;
-use uuid::Uuid;
 
 /// A write accessor for a temporary file.
 ///
@@ -23,7 +23,7 @@ pub struct FileWriter {
 }
 
 impl FileWriter {
-    pub fn new(id: &Uuid, inner: SharedTemporaryFileWriter) -> Self {
+    pub fn new(id: &ShortGuid, inner: SharedTemporaryFileWriter) -> Self {
         debug!(
             "Buffering payload for request {id} to {file:?}",
             file = inner.file_path()
