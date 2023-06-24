@@ -1,6 +1,6 @@
 //! Contains the `/yeet` endpoint filter.
 
-use crate::backbone::CompletionMode;
+use crate::backbone::{CompletionMode, FileHashes};
 use crate::headers::ContentMd5;
 use crate::metrics::transfer::{TransferMethod, TransferMetrics};
 use crate::AppState;
@@ -10,8 +10,10 @@ use axum::headers::{ContentLength, ContentType};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Router, TypedHeader};
+use base64::Engine;
 use hyper::body::Buf;
 use hyper::StatusCode;
+use serde::Serialize;
 use std::convert::Infallible;
 use tokio_stream::StreamExt;
 use tracing::{debug, trace};
@@ -136,5 +138,32 @@ async fn do_yeet(
     // let reader = file.reader().await.unwrap();
     // let size = reader.file_size();
 
-    Ok("".into_response())
+    Ok(axum::Json(SuccessfulUploadResponse {
+        id,
+        hashes: (&*hashes).into(),
+    })
+    .into_response())
+}
+
+#[derive(Serialize)]
+struct SuccessfulUploadResponse {
+    id: Uuid,
+    hashes: Hashes,
+}
+
+#[derive(Serialize)]
+struct Hashes {
+    /// The MD5 hash in hex encoding.
+    md5: String,
+    /// The SHA-256 hash in hex encoding
+    sha256: String,
+}
+
+impl From<&FileHashes> for Hashes {
+    fn from(value: &FileHashes) -> Self {
+        Self {
+            md5: hex::encode(value.md5.as_slice()),
+            sha256: hex::encode(value.sha256),
+        }
+    }
 }
