@@ -11,16 +11,16 @@ use uuid::Uuid;
 ///
 /// ## Remarks
 ///
-/// This writer will be protected by a [`WriterGuard`](crate::backbone::writer_guard::WriterGuard)
+/// This writer will be protected by a [`WriterGuard`](crate::backbone::file_writer_guard::FileWriterGuard)
 /// ensuring that regardless of whether this writer is finalized or dropped without finalization,
 /// the [`Backbone`](crate::backbone::Backbone) is informed about it.
-pub struct Writer {
+pub struct FileWriter {
     inner: SharedTemporaryFileWriter,
     md5: HashMd5,
     sha256: HashSha256,
 }
 
-impl Writer {
+impl FileWriter {
     pub fn new(id: &Uuid, inner: SharedTemporaryFileWriter) -> Self {
         debug!(
             "Buffering payload for request {id} to {file:?}",

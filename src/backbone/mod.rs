@@ -1,9 +1,9 @@
 mod backbone;
 mod file_hashes;
 mod file_record;
+mod file_writer;
+mod file_writer_guard;
 mod hash;
-mod writer;
-mod writer_guard;
 
 pub use backbone::Backbone;
-pub use writer::CompletionMode;
+pub use file_writer::CompletionMode;

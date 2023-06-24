@@ -1,5 +1,5 @@
 use crate::backbone::file_hashes::FileHashes;
-use crate::backbone::writer::{err_broken_pipe, FinalizationError, Writer};
+use crate::backbone::file_writer::{err_broken_pipe, FileWriter, FinalizationError};
 use crate::backbone::CompletionMode;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
@@ -7,11 +7,11 @@ use tokio::sync::oneshot::Sender;
 
 /// A writer guard to communicate back to the [`Backbone`](crate::backbone::Backbone);
 ///
-/// This exists to ensure that we can drop the [`Writer`] (e.g. if the HTTP request
+/// This exists to ensure that we can drop the [`FileWriter`] (e.g. if the HTTP request
 /// is cancelled) and still have the [`Backbone`](crate::backbone::Backbone) informed
 /// about it.
-pub struct WriterGuard {
-    inner: Option<Writer>,
+pub struct FileWriterGuard {
+    inner: Option<FileWriter>,
     sender: Option<Sender<WriteResult>>,
 }
 
@@ -24,8 +24,8 @@ pub enum WriteResult {
     Failed,
 }
 
-impl WriterGuard {
-    pub fn new(writer: Writer, sender: Sender<WriteResult>) -> Self {
+impl FileWriterGuard {
+    pub fn new(writer: FileWriter, sender: Sender<WriteResult>) -> Self {
         Self {
             inner: Some(writer),
             sender: Some(sender),
@@ -82,21 +82,21 @@ impl WriterGuard {
 
 /// This ensures that accidentally dropping the guard does not leave
 /// the backbone in an uninformed state.
-impl Drop for WriterGuard {
+impl Drop for FileWriterGuard {
     fn drop(&mut self) {
         self.fail_if_not_already_closed()
     }
 }
 
-impl Deref for WriterGuard {
-    type Target = Writer;
+impl Deref for FileWriterGuard {
+    type Target = FileWriter;
 
     fn deref(&self) -> &Self::Target {
         self.inner.as_ref().expect("failed to deref writer")
     }
 }
 
-impl DerefMut for WriterGuard {
+impl DerefMut for FileWriterGuard {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.inner.as_mut().expect("failed to deref writer")
     }

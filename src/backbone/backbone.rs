@@ -1,6 +1,6 @@
 use crate::backbone::file_record::FileRecord;
-use crate::backbone::writer::Writer;
-use crate::backbone::writer_guard::WriterGuard;
+use crate::backbone::file_writer::FileWriter;
+use crate::backbone::file_writer_guard::FileWriterGuard;
 use async_tempfile::TempFile;
 use axum::response::{IntoResponse, Response};
 use hyper::StatusCode;
@@ -8,50 +8,70 @@ use shared_files::{SharedFileWriter, SharedTemporaryFile};
 use std::borrow::Borrow;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use tokio::sync::{oneshot, RwLock};
+use std::sync::Arc;
+use tokio::sync::{mpsc, oneshot, RwLock};
+use tracing::info;
 use uuid::Uuid;
 
 /// A local file distribution manager.
 ///
 /// This instance keeps track of currently processed files.
-#[derive(Default)]
 pub struct Backbone {
-    // TODO: Add a temporal lease to the file.
-    open: RwLock<HashMap<Uuid, FileRecord>>,
+    inner: Arc<RwLock<Inner>>,
+    sender: mpsc::Sender<BackboneCommand>,
+}
+
+struct Inner {
+    open: HashMap<Uuid, FileRecord>,
 }
 
 impl Backbone {
+    pub fn new() -> Self {
+        let (sender, receiver) = mpsc::channel(1024);
+        let inner = Arc::new(RwLock::new(Inner {
+            open: HashMap::default(),
+        }));
+        let _ = tokio::spawn(Self::command_loop(inner.clone(), receiver));
+        Self { inner, sender }
+    }
+
     /// Creates a new file buffer, registers it and returns a writer to it.
-    pub async fn new_file(&self, id: Uuid) -> Result<WriterGuard, Error> {
+    pub async fn new_file(&self, id: Uuid) -> Result<FileWriterGuard, Error> {
         // We reuse the ID such that it is easier to find and debug the
         // created file if necessary.
         let file = Self::create_new_temporary_file(id).await?;
         let writer = Self::create_writer_for_file(&file).await?;
 
-        let mut map = self.open.write().await;
+        let mut inner = self.inner.write().await;
         let (sender, receiver) = oneshot::channel();
 
-        match map.entry(id) {
+        // This needs to happen synchronously so that the moment we return the writer,
+        // we know the entry exists.
+        match inner.open.entry(id) {
             Entry::Occupied(_) => {
                 // TODO: Actively mark the file as failed? This could invalidate all readers and writers.
                 drop(writer);
                 drop(file);
                 return Err(Error::InternalErrorMayRetry);
             }
-            Entry::Vacant(v) => v.insert(FileRecord::new(file, receiver)),
+            Entry::Vacant(v) => v.insert(FileRecord::new(id, file, self.sender.clone(), receiver)),
         };
 
-        let writer = Writer::new(&id, writer);
-        Ok(WriterGuard::new(writer, sender))
+        let writer = FileWriter::new(&id, writer);
+        Ok(FileWriterGuard::new(writer, sender))
     }
 
-    /// Removes an entry.
+    /// Requests to remove an entry.
     ///
     /// Currently open writers or readers will continue to work.
     /// When the last reference is closed, the file will be removed.
+    ///
+    /// However, no new readers can be created after this point.
     pub async fn remove<I: Borrow<Uuid>>(&self, id: I) {
-        let mut map = self.open.write().await;
-        map.remove(id.borrow());
+        self.sender
+            .send(BackboneCommand::RemoveWriter(id.borrow().clone()))
+            .await
+            .ok();
     }
 
     async fn create_new_temporary_file(id: Uuid) -> Result<SharedTemporaryFile, Error> {
@@ -67,6 +87,36 @@ impl Backbone {
             .await
             .map_err(|e| Error::FailedCreatingWriter(e))
     }
+
+    async fn command_loop(inner: Arc<RwLock<Inner>>, mut channel: mpsc::Receiver<BackboneCommand>) {
+        while let Some(command) = channel.recv().await {
+            match command {
+                BackboneCommand::RemoveWriter(id) => {
+                    info!("Removing file {id} from bookkeeping");
+                    let mut inner = inner.write().await;
+                    inner.open.remove(id.borrow());
+                }
+            }
+        }
+
+        info!("The backbone command loop stopped");
+    }
+}
+
+impl Default for Backbone {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug)]
+pub enum BackboneCommand {
+    /// Removes an entry. This should only be called when there are no
+    /// more open references to the file.
+    ///
+    /// Currently open writers or readers will continue to work.
+    /// When the last reference is closed, the file will be removed.
+    RemoveWriter(Uuid),
 }
 
 #[derive(Debug, thiserror::Error)]
