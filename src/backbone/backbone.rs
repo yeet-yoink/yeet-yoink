@@ -96,6 +96,9 @@ impl Backbone {
                     let mut inner = inner.write().await;
                     inner.open.remove(id.borrow());
                 }
+                BackboneCommand::ReadyForDistribution(id) => {
+                    info!("The file {id} was buffered completely and can now be distributed")
+                }
             }
         }
 
@@ -117,6 +120,8 @@ pub enum BackboneCommand {
     /// Currently open writers or readers will continue to work.
     /// When the last reference is closed, the file will be removed.
     RemoveWriter(Uuid),
+    /// Marks the file ready for distribution to other backends.
+    ReadyForDistribution(Uuid),
 }
 
 #[derive(Debug, thiserror::Error)]
