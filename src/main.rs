@@ -17,7 +17,6 @@ use tracing::{error, info, warn};
 mod backbone;
 mod commands;
 mod handlers;
-mod headers;
 mod health;
 mod logging;
 mod metrics;

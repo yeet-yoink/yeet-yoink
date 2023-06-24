@@ -586,6 +586,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "headers-content-md5"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "170af85c91e5616551867e7662282b100425ec855779c2ce20445dc5094b43aa"
+dependencies = [
+ "base64 0.21.2",
+ "headers",
+ "http",
+]
+
+[[package]]
 name = "headers-core"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1694,6 +1705,7 @@ dependencies = [
  "dotenvy",
  "exitcode",
  "futures",
+ "headers-content-md5",
  "hex",
  "hyper",
  "lazy_static",

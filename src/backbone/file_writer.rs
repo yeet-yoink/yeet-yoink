@@ -20,6 +20,7 @@ pub struct FileWriter {
     inner: SharedTemporaryFileWriter,
     md5: HashMd5,
     sha256: HashSha256,
+    file_size: usize,
 }
 
 impl FileWriter {
@@ -33,11 +34,12 @@ impl FileWriter {
             inner,
             md5: HashMd5::new(),
             sha256: HashSha256::new(),
+            file_size: 0,
         }
     }
 
     pub async fn write(&mut self, chunk: &[u8]) -> std::io::Result<usize> {
-        self.update_hashes(chunk);
+        self.update_state(chunk);
         self.inner.write(chunk).await
     }
 
@@ -57,15 +59,18 @@ impl FileWriter {
 
         let md5 = self.md5.finalize();
         let sha256 = self.sha256.finalize();
+
         let summary = Arc::new(WriteSummary {
             expires: Instant::now() + expiration,
             hashes: FileHashes { sha256, md5 },
+            file_size_bytes: self.file_size,
         });
 
         Ok(summary)
     }
 
-    fn update_hashes(&mut self, buf: &[u8]) {
+    fn update_state(&mut self, buf: &[u8]) {
+        self.file_size += buf.len();
         self.md5.update(buf);
         self.sha256.update(buf);
     }
@@ -78,6 +83,8 @@ pub struct WriteSummary {
     pub expires: Instant,
     /// The file hashes.
     pub hashes: FileHashes,
+    /// The file size in bytes.
+    pub file_size_bytes: usize,
 }
 
 pub(crate) fn err_broken_pipe<T>() -> Result<T, Error> {

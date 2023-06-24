@@ -1,7 +1,9 @@
 use crate::backbone::file_record::{FileRecord, GetReaderError};
 use crate::backbone::file_writer::FileWriter;
 use crate::backbone::file_writer_guard::FileWriterGuard;
+use crate::backbone::WriteSummary;
 use async_tempfile::TempFile;
+use axum::headers::ContentType;
 use axum::response::{IntoResponse, Response};
 use hyper::StatusCode;
 use shared_files::{SharedFileWriter, SharedTemporaryFile, SharedTemporaryFileReader};
@@ -40,7 +42,13 @@ impl Backbone {
     }
 
     /// Creates a new file buffer, registers it and returns a writer to it.
-    pub async fn new_file(&self, id: ShortGuid) -> Result<FileWriterGuard, NewFileError> {
+    pub async fn new_file(
+        &self,
+        id: ShortGuid,
+        expected_size: Option<u64>,
+        content_type: Option<ContentType>,
+        content_md5: Option<[u8; 16]>,
+    ) -> Result<FileWriterGuard, NewFileError> {
         // We reuse the ID such that it is easier to find and debug the
         // created file if necessary.
         let file = Self::create_new_temporary_file(id).await?;
@@ -121,7 +129,7 @@ impl Backbone {
                     let mut inner = inner.write().await;
                     inner.open.remove(&id);
                 }
-                BackboneCommand::ReadyForDistribution(id) => {
+                BackboneCommand::ReadyForDistribution(id, _) => {
                     info!("The file {id} was buffered completely and can now be distributed")
                 }
             }
@@ -146,7 +154,7 @@ pub enum BackboneCommand {
     /// When the last reference is closed, the file will be removed.
     RemoveWriter(ShortGuid),
     /// Marks the file ready for distribution to other backends.
-    ReadyForDistribution(ShortGuid),
+    ReadyForDistribution(ShortGuid, Arc<WriteSummary>),
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -1,17 +1,17 @@
 //! Contains the `/yeet` endpoint filter.
 
 use crate::backbone::{CompletionMode, FileHashes};
-use crate::headers::ContentMd5;
 use crate::metrics::transfer::{TransferMethod, TransferMetrics};
 use crate::AppState;
 use axum::body::HttpBody;
-use axum::extract::{BodyStream, State};
+use axum::extract::{BodyStream, State, TypedHeader};
 use axum::headers::{ContentLength, ContentType};
 use axum::http::HeaderValue;
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
-use axum::{Router, TypedHeader};
+use axum::Router;
 use chrono::{DateTime, Utc};
+use headers_content_md5::ContentMd5;
 use hyper::body::Buf;
 use hyper::header::EXPIRES;
 use hyper::StatusCode;
@@ -52,19 +52,36 @@ async fn do_yeet(
     State(state): State<AppState>,
     stream: BodyStream,
 ) -> Result<Response, StatusCode> {
-    if let Some(TypedHeader(ContentLength(n))) = content_length {
+    let content_length = if let Some(TypedHeader(ContentLength(n))) = content_length {
         trace!("Expecting {value} bytes", value = n);
-    }
+        Some(n)
+    } else {
+        None
+    };
 
-    if let Some(TypedHeader(mime)) = content_type {
-        trace!("Expecting MIME type {value}", value = mime);
-    }
+    let content_type = if let Some(TypedHeader(contentType)) = content_type {
+        trace!("Expecting MIME type {value}", value = contentType);
+        Some(contentType)
+    } else {
+        None
+    };
+
+    let content_md5 = if let Some(TypedHeader(ContentMd5(md5))) = content_md5 {
+        trace!("Expecting content MD5 {value}", value = hex::encode(md5));
+        Some(md5)
+    } else {
+        None
+    };
 
     let id = ShortGuid::new_random();
 
     // TODO: Allow capacity?
     // TODO: Add server-side validation of MD5 value if header is present.
-    let mut writer = match state.backbone.new_file(id).await {
+    let mut writer = match state
+        .backbone
+        .new_file(id, content_length, content_type, content_md5)
+        .await
+    {
         Ok(writer) => writer,
         Err(e) => return Ok(e.into()),
     };
@@ -138,6 +155,7 @@ async fn do_yeet(
 
     let mut response = axum::Json(SuccessfulUploadResponse {
         id,
+        file_size_bytes: write_result.file_size_bytes,
         hashes: (&write_result.hashes).into(),
     })
     .into_response();
@@ -164,7 +182,11 @@ fn expiration_as_rfc1123(expires: &tokio::time::Instant) -> String {
 
 #[derive(Serialize)]
 struct SuccessfulUploadResponse {
+    /// The ID of the file.
     id: ShortGuid,
+    /// The file size in bytes.
+    file_size_bytes: usize,
+    /// The hashes of the file.
     hashes: Hashes,
 }
 

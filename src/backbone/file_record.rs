@@ -1,5 +1,6 @@
 use crate::backbone::backbone::BackboneCommand;
 use crate::backbone::file_writer_guard::WriteResult;
+use crate::backbone::WriteSummary;
 use shared_files::{SharedTemporaryFile, SharedTemporaryFileReader};
 use shortguid::ShortGuid;
 use std::sync::Arc;
@@ -18,6 +19,7 @@ pub(crate) struct FileRecord {
 #[derive(Debug)]
 struct Inner {
     file: Option<SharedTemporaryFile>,
+    summary: Option<Arc<WriteSummary>>,
 }
 
 impl FileRecord {
@@ -28,7 +30,10 @@ impl FileRecord {
         writer_command: Receiver<WriteResult>,
         duration: Duration,
     ) -> Self {
-        let inner = Arc::new(RwLock::new(Inner { file: Some(file) }));
+        let inner = Arc::new(RwLock::new(Inner {
+            file: Some(file),
+            summary: None,
+        }));
         let _ = tokio::spawn(Self::lifetime_handler(
             id,
             inner.clone(),
@@ -66,9 +71,10 @@ impl FileRecord {
         duration: Duration,
     ) {
         // Before starting the timeout, wait for the write to the file to complete.
-        match writer_command.await {
+        let summary = match writer_command.await {
             Ok(WriteResult::Success(summary)) => {
                 info!("File writing completed: {}", summary.hashes);
+                summary
             }
             Ok(WriteResult::Failed) => {
                 warn!("Writing to the file failed");
@@ -82,11 +88,17 @@ impl FileRecord {
                 Self::remove_writer(id, backbone_command).await;
                 return;
             }
+        };
+
+        // Persist the write summary.
+        {
+            let mut inner = inner.write().await;
+            inner.summary = Some(summary.clone());
         }
 
         // Indicate the file is ready for processing.
         if let Err(error) = backbone_command
-            .send(BackboneCommand::ReadyForDistribution(id))
+            .send(BackboneCommand::ReadyForDistribution(id, summary))
             .await
         {
             warn!("The backbone writer channel was closed while indicating a termination for file with ID {id}: {error}");
