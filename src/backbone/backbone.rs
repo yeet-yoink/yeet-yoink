@@ -74,11 +74,18 @@ impl Backbone {
                 self.sender.clone(),
                 receiver,
                 temporal_lease,
+                content_type,
             )),
         };
 
         let writer = FileWriter::new(&id, writer);
-        Ok(FileWriterGuard::new(writer, sender, temporal_lease))
+        Ok(FileWriterGuard::new(
+            writer,
+            sender,
+            temporal_lease,
+            expected_size,
+            content_md5,
+        ))
     }
 
     /// Creates a new file buffer, registers it and returns a writer to it.

@@ -103,6 +103,10 @@ pub enum FinalizationError {
     FileSyncFailed(#[from] CompleteWritingError),
     #[error("Failed to communicate to the backbone")]
     BackboneCommunicationFailed,
+    #[error("Invalid file length: expected {0}, got {1}")]
+    InvalidFileLength(u64, u64),
+    #[error("Integrity check failed: expected MD5 {0}, got MD5 {1}")]
+    IntegrityCheckFailed(String, String),
 }
 
 #[derive(Debug, thiserror::Error)]

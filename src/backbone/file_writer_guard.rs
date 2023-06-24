@@ -1,6 +1,8 @@
 use crate::backbone::file_writer::{err_broken_pipe, FileWriter, FinalizationError, WriteSummary};
 use crate::backbone::CompletionMode;
+use std::io::ErrorKind;
 use std::ops::{Deref, DerefMut};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::oneshot::Sender;
@@ -11,9 +13,18 @@ use tokio::sync::oneshot::Sender;
 /// is cancelled) and still have the [`Backbone`](crate::backbone::Backbone) informed
 /// about it.
 pub struct FileWriterGuard {
+    /// The file writer; `None` when closed.
     inner: Option<FileWriter>,
+    /// The sender to communicate with the backbone.
     sender: Option<Sender<WriteResult>>,
+    /// The expiration time of this file.
     expiration: Duration,
+    /// The actual file size as per bookkeeping.
+    file_size: u64,
+    /// The expected content size as per `Content-Length` header, in bytes.
+    expected_size: Option<u64>,
+    /// The expected MD5 hash of the content, as per `Content-MD5` header.
+    expected_content_md5: Option<[u8; 16]>,
 }
 
 /// A write result.
@@ -26,17 +37,42 @@ pub enum WriteResult {
 }
 
 impl FileWriterGuard {
-    pub fn new(writer: FileWriter, sender: Sender<WriteResult>, expiration: Duration) -> Self {
+    pub fn new(
+        writer: FileWriter,
+        sender: Sender<WriteResult>,
+        expiration: Duration,
+        expected_size: Option<u64>,
+        content_md5: Option<[u8; 16]>,
+    ) -> Self {
         Self {
             inner: Some(writer),
             sender: Some(sender),
             expiration,
+            file_size: 0,
+            expected_size,
+            expected_content_md5: content_md5,
         }
     }
 
     pub async fn write(&mut self, chunk: &[u8]) -> std::io::Result<usize> {
         if let Some(ref mut writer) = self.inner {
-            writer.write(chunk).await
+            let bytes = writer.write(chunk).await?;
+            self.file_size += bytes as u64;
+
+            // Ensure we don't store more bytes than anticipated.
+            // This check only happens when we have a Content-Length header (or similar)
+            // available.
+            if let Some(expected_size) = self.expected_size {
+                if self.file_size > expected_size {
+                    self.fail_if_not_already_closed();
+                    return Err(std::io::Error::new(
+                        ErrorKind::UnexpectedEof,
+                        "Attempted to write more bytes than announced",
+                    ));
+                }
+            }
+
+            Ok(bytes)
         } else {
             err_broken_pipe()
         }
@@ -48,6 +84,29 @@ impl FileWriterGuard {
     ) -> Result<Arc<WriteSummary>, FinalizationError> {
         if let Some(writer) = self.inner.take() {
             let summary = writer.finalize(mode, self.expiration).await?;
+
+            // Verify the file length if possible.
+            if let Some(expected_size) = self.expected_size {
+                if self.file_size != expected_size {
+                    self.fail_if_not_already_closed();
+                    return Err(FinalizationError::InvalidFileLength(
+                        self.file_size,
+                        expected_size,
+                    ));
+                }
+            }
+
+            // Verify integrity if possible.
+            if let Some(md5) = self.expected_content_md5 {
+                if md5.ne(&summary.hashes.md5[..]) {
+                    self.fail_if_not_already_closed();
+                    return Err(FinalizationError::IntegrityCheckFailed(
+                        hex::encode(md5),
+                        hex::encode(&summary.hashes.md5[..]),
+                    ));
+                }
+            }
+
             self.try_signal_success(&summary)?;
             Ok(summary)
         } else {

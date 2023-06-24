@@ -1,6 +1,7 @@
 use crate::backbone::backbone::BackboneCommand;
 use crate::backbone::file_writer_guard::WriteResult;
 use crate::backbone::WriteSummary;
+use axum::headers::ContentType;
 use shared_files::{SharedTemporaryFile, SharedTemporaryFileReader};
 use shortguid::ShortGuid;
 use std::sync::Arc;
@@ -20,6 +21,7 @@ pub(crate) struct FileRecord {
 struct Inner {
     file: Option<SharedTemporaryFile>,
     summary: Option<Arc<WriteSummary>>,
+    content_type: Option<ContentType>,
 }
 
 impl FileRecord {
@@ -29,10 +31,12 @@ impl FileRecord {
         backbone_command: Sender<BackboneCommand>,
         writer_command: Receiver<WriteResult>,
         duration: Duration,
+        content_type: Option<ContentType>,
     ) -> Self {
         let inner = Arc::new(RwLock::new(Inner {
             file: Some(file),
             summary: None,
+            content_type,
         }));
         let _ = tokio::spawn(Self::lifetime_handler(
             id,
