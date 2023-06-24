@@ -59,9 +59,9 @@ async fn do_yeet(
         None
     };
 
-    let content_type = if let Some(TypedHeader(contentType)) = content_type {
-        trace!("Expecting MIME type {value}", value = contentType);
-        Some(contentType)
+    let content_type = if let Some(TypedHeader(content_type)) = content_type {
+        trace!("Expecting MIME type {value}", value = content_type);
+        Some(content_type)
     } else {
         None
     };

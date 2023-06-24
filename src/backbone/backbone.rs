@@ -1,3 +1,4 @@
+use crate::backbone::file_reader::FileReader;
 use crate::backbone::file_record::{FileRecord, GetReaderError};
 use crate::backbone::file_writer::FileWriter;
 use crate::backbone::file_writer_guard::FileWriterGuard;
@@ -6,7 +7,7 @@ use async_tempfile::TempFile;
 use axum::headers::ContentType;
 use axum::response::{IntoResponse, Response};
 use hyper::StatusCode;
-use shared_files::{SharedFileWriter, SharedTemporaryFile, SharedTemporaryFileReader};
+use shared_files::{SharedFileWriter, SharedTemporaryFile};
 use shortguid::ShortGuid;
 use std::borrow::Borrow;
 use std::collections::hash_map::Entry;
@@ -89,14 +90,14 @@ impl Backbone {
     }
 
     /// Creates a new file buffer, registers it and returns a writer to it.
-    pub async fn get_file(
-        &self,
-        id: ShortGuid,
-    ) -> Result<SharedTemporaryFileReader, GetReaderError> {
+    pub async fn get_file(&self, id: ShortGuid) -> Result<FileReader, GetReaderError> {
         let inner = self.inner.read().await;
         match inner.open.get(&id) {
             None => Err(GetReaderError::UnknownFile(id)),
-            Some(file) => file.get_reader().await,
+            Some(file) => {
+                let reader = file.get_reader().await?;
+                Ok(FileReader::new(reader, file.content_type.clone()))
+            }
         }
     }
 

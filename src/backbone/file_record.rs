@@ -13,7 +13,8 @@ use tracing::{info, warn};
 
 #[derive(Debug)]
 pub(crate) struct FileRecord {
-    id: ShortGuid,
+    pub id: ShortGuid,
+    pub content_type: Option<ContentType>,
     inner: Arc<RwLock<Inner>>,
 }
 
@@ -21,7 +22,6 @@ pub(crate) struct FileRecord {
 struct Inner {
     file: Option<SharedTemporaryFile>,
     summary: Option<Arc<WriteSummary>>,
-    content_type: Option<ContentType>,
 }
 
 impl FileRecord {
@@ -36,7 +36,6 @@ impl FileRecord {
         let inner = Arc::new(RwLock::new(Inner {
             file: Some(file),
             summary: None,
-            content_type,
         }));
         let _ = tokio::spawn(Self::lifetime_handler(
             id,
@@ -45,7 +44,11 @@ impl FileRecord {
             writer_command,
             duration,
         ));
-        Self { id, inner }
+        Self {
+            id,
+            inner,
+            content_type,
+        }
     }
 
     /// Gets an additional reader for the file.

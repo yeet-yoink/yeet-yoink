@@ -2,7 +2,6 @@ use crate::backbone::file_writer::{err_broken_pipe, FileWriter, FinalizationErro
 use crate::backbone::CompletionMode;
 use std::io::ErrorKind;
 use std::ops::{Deref, DerefMut};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::oneshot::Sender;

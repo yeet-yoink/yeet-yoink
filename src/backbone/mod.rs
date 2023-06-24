@@ -1,5 +1,6 @@
 mod backbone;
 mod file_hashes;
+mod file_reader;
 mod file_record;
 mod file_writer;
 mod file_writer_guard;

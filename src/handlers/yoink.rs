@@ -55,14 +55,15 @@ async fn do_yoink(
     // TODO: Get ETAG / hashes
     // headers.push((header::ETAG, ...));
 
-    // TODO: Store and retrieve the content type
-    headers.push((header::CONTENT_TYPE, "text/toml; charset=utf-8".into()));
+    if let Some(content_type) = file.content_type() {
+        headers.push((header::CONTENT_TYPE, content_type.to_string()));
+    }
 
     // TODO: Store and retrieve the file name
-    headers.push((
-        header::CONTENT_DISPOSITION,
-        "attachment; filename=\"Cargo.toml\"".into(),
-    ));
+    // headers.push((
+    //     header::CONTENT_DISPOSITION,
+    //     "attachment; filename=\"file.name\"".into(),
+    // ));
 
     let stream = ReaderStream::new(file);
     let body = StreamBody::new(stream);
