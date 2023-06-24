@@ -3,25 +3,37 @@ use shared_files::{FileSize, SharedTemporaryFileReader};
 use std::borrow::Cow;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Duration;
 use tokio::io::{AsyncRead, ReadBuf};
+use tokio::time::Instant;
 
 /// A read accessor for a temporary file.
 pub struct FileReader {
     /// The file reader.
     inner: SharedTemporaryFileReader,
     content_type: Option<String>,
+    created: Instant,
 }
 
 impl FileReader {
-    pub fn new(reader: SharedTemporaryFileReader, content_type: Option<ContentType>) -> Self {
+    pub fn new(
+        reader: SharedTemporaryFileReader,
+        content_type: Option<ContentType>,
+        created: Instant,
+    ) -> Self {
         Self {
             inner: reader,
             content_type: content_type.map(|c| c.to_string()),
+            created,
         }
     }
 
     pub fn file_size(&self) -> FileSize {
         self.inner.file_size()
+    }
+
+    pub fn file_age(&self) -> Duration {
+        Instant::now() - self.created
     }
 
     pub fn content_type(&self) -> Option<Cow<str>> {

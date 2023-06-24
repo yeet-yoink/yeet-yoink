@@ -9,12 +9,14 @@ use std::time::Duration;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver;
 use tokio::sync::RwLock;
+use tokio::time::Instant;
 use tracing::{info, warn};
 
 #[derive(Debug)]
 pub(crate) struct FileRecord {
     pub id: ShortGuid,
     pub content_type: Option<ContentType>,
+    pub created: Instant,
     inner: Arc<RwLock<Inner>>,
 }
 
@@ -32,6 +34,7 @@ impl FileRecord {
         writer_command: Receiver<WriteResult>,
         duration: Duration,
         content_type: Option<ContentType>,
+        created: Instant,
     ) -> Self {
         let inner = Arc::new(RwLock::new(Inner {
             file: Some(file),
@@ -48,6 +51,7 @@ impl FileRecord {
             id,
             inner,
             content_type,
+            created,
         }
     }
 

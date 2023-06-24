@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, RwLock};
+use tokio::time::Instant;
 use tracing::info;
 
 /// The duration for which to keep each file alive.
@@ -76,6 +77,7 @@ impl Backbone {
                 receiver,
                 temporal_lease,
                 content_type,
+                Instant::now(),
             )),
         };
 
@@ -96,7 +98,11 @@ impl Backbone {
             None => Err(GetReaderError::UnknownFile(id)),
             Some(file) => {
                 let reader = file.get_reader().await?;
-                Ok(FileReader::new(reader, file.content_type.clone()))
+                Ok(FileReader::new(
+                    reader,
+                    file.content_type.clone(),
+                    file.created,
+                ))
             }
         }
     }

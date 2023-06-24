@@ -59,11 +59,13 @@ async fn do_yoink(
         headers.push((header::CONTENT_TYPE, content_type.to_string()));
     }
 
-    // TODO: Store and retrieve the file name
-    // headers.push((
-    //     header::CONTENT_DISPOSITION,
-    //     "attachment; filename=\"file.name\"".into(),
-    // ));
+    headers.push((header::AGE, file.file_age().as_secs().to_string()));
+
+    // TODO: Provide an optional file name when storing
+    headers.push((
+        header::CONTENT_DISPOSITION,
+        format!("attachment; filename=\"{id}\""),
+    ));
 
     let stream = ReaderStream::new(file);
     let body = StreamBody::new(stream);
