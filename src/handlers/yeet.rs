@@ -136,8 +136,5 @@ async fn do_yeet(
     // let reader = file.reader().await.unwrap();
     // let size = reader.file_size();
 
-    // TODO: Temporary solution to remove the file.
-    state.backbone.remove(id).await;
-
     Ok("".into_response())
 }

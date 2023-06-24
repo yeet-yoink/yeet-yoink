@@ -69,10 +69,10 @@ impl FileRecord {
 
         // Apply the temporal lease to the file.
         if keep_alive {
-            Self::apply_temporal_lease(&id).await;
-            info!("Read lease timed out for file {id}, removing it");
+            Self::apply_temporal_lease(&id, TEMPORAL_LEASE).await;
+            info!("Read lease timed out for file {id}; removing it");
         } else {
-            info!("File {id} is not to be kep open - removing it")
+            info!("File {id} is not to be kept open; removing it")
         }
 
         if let Err(error) = backbone_command
@@ -83,10 +83,9 @@ impl FileRecord {
         }
     }
 
-    async fn apply_temporal_lease(id: &Uuid) {
-        let timeout = tokio::time::sleep(TEMPORAL_LEASE);
-        timeout.await;
-        info!("Read lease timed out for file {id}, removing it");
+    async fn apply_temporal_lease(id: &Uuid, duration: Duration) {
+        info!("File {id} will accept new readers for {duration}");
+        tokio::time::sleep(duration).await
     }
 
     async fn close_file(inner: &mut Arc<RwLock<Inner>>) {
