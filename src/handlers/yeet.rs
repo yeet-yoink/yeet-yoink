@@ -11,7 +11,6 @@ use axum::http::HeaderValue;
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Router, TypedHeader};
-use base64::Engine;
 use chrono::{DateTime, Utc};
 use hyper::body::Buf;
 use hyper::header::EXPIRES;

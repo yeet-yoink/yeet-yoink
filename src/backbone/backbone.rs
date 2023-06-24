@@ -1,10 +1,10 @@
-use crate::backbone::file_record::FileRecord;
+use crate::backbone::file_record::{FileRecord, GetReaderError};
 use crate::backbone::file_writer::FileWriter;
 use crate::backbone::file_writer_guard::FileWriterGuard;
 use async_tempfile::TempFile;
 use axum::response::{IntoResponse, Response};
 use hyper::StatusCode;
-use shared_files::{SharedFileWriter, SharedTemporaryFile};
+use shared_files::{SharedFileWriter, SharedTemporaryFile, SharedTemporaryFileReader};
 use shortguid::ShortGuid;
 use std::borrow::Borrow;
 use std::collections::hash_map::Entry;
@@ -40,11 +40,11 @@ impl Backbone {
     }
 
     /// Creates a new file buffer, registers it and returns a writer to it.
-    pub async fn new_file(&self, id: ShortGuid) -> Result<FileWriterGuard, Error> {
+    pub async fn new_file(&self, id: ShortGuid) -> Result<FileWriterGuard, NewFileError> {
         // We reuse the ID such that it is easier to find and debug the
         // created file if necessary.
         let file = Self::create_new_temporary_file(id).await?;
-        let writer = Self::create_writer_for_file(&file).await?;
+        let writer = Self::create_writer_for_file(id, &file).await?;
 
         let mut inner = self.inner.write().await;
         let (sender, receiver) = oneshot::channel();
@@ -58,7 +58,7 @@ impl Backbone {
                 // TODO: Actively mark the file as failed? This could invalidate all readers and writers.
                 drop(writer);
                 drop(file);
-                return Err(Error::InternalErrorMayRetry);
+                return Err(NewFileError::InternalErrorMayRetry(id));
             }
             Entry::Vacant(v) => v.insert(FileRecord::new(
                 id,
@@ -71,6 +71,18 @@ impl Backbone {
 
         let writer = FileWriter::new(&id, writer);
         Ok(FileWriterGuard::new(writer, sender, temporal_lease))
+    }
+
+    /// Creates a new file buffer, registers it and returns a writer to it.
+    pub async fn get_file(
+        &self,
+        id: ShortGuid,
+    ) -> Result<SharedTemporaryFileReader, GetReaderError> {
+        let inner = self.inner.read().await;
+        match inner.open.get(&id) {
+            None => Err(GetReaderError::UnknownFile(id)),
+            Some(file) => file.get_reader().await,
+        }
     }
 
     /// Requests to remove an entry.
@@ -86,18 +98,19 @@ impl Backbone {
             .ok();
     }
 
-    async fn create_new_temporary_file(id: ShortGuid) -> Result<SharedTemporaryFile, Error> {
+    async fn create_new_temporary_file(id: ShortGuid) -> Result<SharedTemporaryFile, NewFileError> {
         SharedTemporaryFile::new_with_uuid(id.into())
             .await
-            .map_err(|e| Error::FailedCreatingFile(e))
+            .map_err(|e| NewFileError::FailedCreatingFile(id, e))
     }
 
     async fn create_writer_for_file(
+        id: ShortGuid,
         file: &SharedTemporaryFile,
-    ) -> Result<SharedFileWriter<TempFile>, Error> {
+    ) -> Result<SharedFileWriter<TempFile>, NewFileError> {
         file.writer()
             .await
-            .map_err(|e| Error::FailedCreatingWriter(e))
+            .map_err(|e| NewFileError::FailedCreatingWriter(id, e))
     }
 
     async fn command_loop(inner: Arc<RwLock<Inner>>, mut channel: mpsc::Receiver<BackboneCommand>) {
@@ -137,31 +150,45 @@ pub enum BackboneCommand {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("Failed to create the file: {0}")]
-    FailedCreatingFile(async_tempfile::Error),
-    #[error("Failed to create a writer to the file: {0}")]
-    FailedCreatingWriter(async_tempfile::Error),
+pub enum NewFileError {
+    #[error("Failed to create the file: {1}")]
+    FailedCreatingFile(ShortGuid, async_tempfile::Error),
+    #[error("Failed to create a writer to the file: {1}")]
+    FailedCreatingWriter(ShortGuid, async_tempfile::Error),
     #[error("An internal error occurred; the operation may be retried")]
-    InternalErrorMayRetry,
+    InternalErrorMayRetry(ShortGuid),
 }
 
-impl From<Error> for Response {
-    fn from(value: Error) -> Self {
+impl From<NewFileError> for Response {
+    fn from(value: NewFileError) -> Self {
         match value {
-            Error::FailedCreatingFile(e) => {
-                internal_server_error(format!("Failed to create temporary file: {e}"))
+            NewFileError::FailedCreatingFile(id, e) => {
+                problemdetails::new(StatusCode::INTERNAL_SERVER_ERROR)
+                    .with_title("File not found")
+                    .with_detail(format!("Failed to create temporary file: {e}"))
+                    .with_value("id", id.to_string())
+                    .with_value("error", e.to_string())
+                    .into_response()
             }
-            Error::FailedCreatingWriter(e) => internal_server_error(format!(
-                "Failed to create a writer for the temporary file: {e}"
-            )),
-            Error::InternalErrorMayRetry => internal_server_error(format!(
-                "Failed to create temporary file - ID already in use"
-            )),
+            NewFileError::FailedCreatingWriter(id, e) => {
+                problemdetails::new(StatusCode::INTERNAL_SERVER_ERROR)
+                    .with_title("File not found")
+                    .with_detail(format!(
+                        "Failed to create a writer for the temporary file: {e}"
+                    ))
+                    .with_value("id", id.to_string())
+                    .with_value("error", e.to_string())
+                    .into_response()
+            }
+            NewFileError::InternalErrorMayRetry(id) => {
+                problemdetails::new(StatusCode::INTERNAL_SERVER_ERROR)
+                    .with_title("File not found")
+                    .with_detail(format!(
+                        "Failed to create temporary file - ID already in use"
+                    ))
+                    .with_value("id", id.to_string())
+                    .into_response()
+            }
         }
     }
-}
-
-fn internal_server_error(message: String) -> Response {
-    (StatusCode::INTERNAL_SERVER_ERROR, message).into_response()
 }

@@ -952,6 +952,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
+name = "problemdetails"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ab12f626ea29045c0e34ccb5d3501197c764ea2159dc91906c09e956b51da42"
+dependencies = [
+ "axum",
+ "http",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.60"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1089,6 +1101,7 @@ version = "1.0.97"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bdf3bf93142acad5821c99197022e170842cdbc1c30482b98750c688c640842a"
 dependencies = [
+ "indexmap",
  "itoa",
  "ryu",
  "serde",
@@ -1686,6 +1699,7 @@ dependencies = [
  "lazy_static",
  "md5",
  "pin-project",
+ "problemdetails",
  "prometheus-client",
  "serde",
  "sha2",

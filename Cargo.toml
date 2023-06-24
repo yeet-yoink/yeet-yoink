@@ -27,6 +27,7 @@ hyper = { version = "0.14.26", features = ["http1", "http2", "server", "h2"] }
 lazy_static = "1.4.0"
 md5 = "0.7.0"
 pin-project = "1.1.0"
+problemdetails = { version = "0.2.1", features = ["axum"] }
 prometheus-client = "0.21.1"
 serde = { version = "1.0.164", features = ["derive"] }
 sha2 = "0.10.7"

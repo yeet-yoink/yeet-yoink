@@ -1,16 +1,19 @@
 use crate::backbone::backbone::BackboneCommand;
 use crate::backbone::file_writer_guard::WriteResult;
-use shared_files::SharedTemporaryFile;
+use shared_files::{SharedTemporaryFile, SharedTemporaryFileReader};
 use shortguid::ShortGuid;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::RwLock;
 use tracing::{info, warn};
 
 #[derive(Debug)]
-pub(crate) struct FileRecord;
+pub(crate) struct FileRecord {
+    id: ShortGuid,
+    inner: Arc<RwLock<Inner>>,
+}
 
 #[derive(Debug)]
 struct Inner {
@@ -33,7 +36,19 @@ impl FileRecord {
             writer_command,
             duration,
         ));
-        Self {}
+        Self { id, inner }
+    }
+
+    /// Gets an additional reader for the file.
+    pub async fn get_reader(&self) -> Result<SharedTemporaryFileReader, GetReaderError> {
+        let inner = self.inner.read().await;
+        match &inner.file {
+            None => Err(GetReaderError::FileExpired(self.id)),
+            Some(file) => Ok(file
+                .reader()
+                .await
+                .map_err(|e| GetReaderError::FileError(self.id, e))?),
+        }
     }
 
     /// Controls the lifetime of the entry in the backbone.
@@ -46,7 +61,7 @@ impl FileRecord {
     async fn lifetime_handler(
         id: ShortGuid,
         mut inner: Arc<RwLock<Inner>>,
-        backbone_command: mpsc::Sender<BackboneCommand>,
+        backbone_command: Sender<BackboneCommand>,
         writer_command: Receiver<WriteResult>,
         duration: Duration,
     ) {
@@ -104,4 +119,14 @@ impl FileRecord {
             warn!("The backbone writer channel was closed while indicating a termination for file with ID {id}: {error}");
         }
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum GetReaderError {
+    #[error("No file found for the specified ID {0}")]
+    UnknownFile(ShortGuid),
+    #[error("The file lease has expired for the specified ID {0}")]
+    FileExpired(ShortGuid),
+    #[error("Failed to open the file for ID {0}: {1}")]
+    FileError(ShortGuid, async_tempfile::Error),
 }
