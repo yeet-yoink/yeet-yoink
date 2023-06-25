@@ -31,6 +31,15 @@ pub fn build_command() -> Command {
                 .action(clap::ArgAction::Append)
                 .value_parser(socket_addr)
                 .help_heading("Server"),
+        )
+        .arg(
+            Arg::new("dial")
+                .long("dial")
+                .value_name("MULTIADDR")
+                .help("The multiaddr to dial")
+                .num_args(1)
+                .allow_negative_numbers(false)
+                .help_heading("libp2p"),
         );
     command
 }

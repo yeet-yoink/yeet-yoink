@@ -7,7 +7,9 @@ use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use hyper::Server;
 use libp2p::core::upgrade;
-use libp2p::{identity, noise, tcp, PeerId, Transport};
+use libp2p::swarm::derive_prelude::Either;
+use libp2p::swarm::{keep_alive, NetworkBehaviour, SwarmBuilder, SwarmEvent};
+use libp2p::{identity, noise, ping, tcp, Multiaddr, PeerId, Transport};
 use serde::{Deserialize, Serialize};
 use shortguid::ShortGuid;
 use std::net::SocketAddr;
@@ -42,6 +44,16 @@ struct MetadataAnnounce {
     metadata: FileMetadata,
 }
 
+/// Our network behaviour.
+///
+/// For illustrative purposes, this includes the [`KeepAlive`](behaviour::KeepAlive) behaviour so a continuous sequence of
+/// pings can be observed.
+#[derive(NetworkBehaviour, Default)]
+struct Behaviour {
+    keep_alive: keep_alive::Behaviour,
+    ping: ping::Behaviour,
+}
+
 #[tokio::main]
 async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
@@ -55,8 +67,56 @@ async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     let local_peer_id = PeerId::from(local_key.public());
     info!("Local peer ID: {local_peer_id}");
 
+    // The transport defines how to send data.
     // TODO: Replace with custom transport creation.
     let transport = libp2p::tokio_development_transport(local_key)?;
+
+    // The behavior defines what data to send.
+    let behaviour = Behaviour::default();
+
+    // The swarm combines the transport with the behavior, driving both.
+    let mut swarm = SwarmBuilder::with_tokio_executor(transport, behaviour, local_peer_id).build();
+
+    // Tell the swarm to listen on all interfaces and a random, OS-assigned port.
+    let addr: Multiaddr = "/ip4/0.0.0.0/tcp/0".parse()?;
+    swarm.listen_on(addr)?;
+
+    // Dial the peer identified by the multi-address given as the second
+    // command-line argument, if any.
+    if let Some(addr) = matches.get_one::<String>("dial") {
+        let remote: Multiaddr = addr.parse()?;
+        swarm.dial(remote)?;
+        println!("Dialed {addr}")
+    }
+
+    loop {
+        match swarm.select_next_some().await {
+            SwarmEvent::NewListenAddr { address, .. } => info!("Listening on {address}"),
+            SwarmEvent::Behaviour(event) => info!("Swarm event: {event:?}"),
+            SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+                info!("Connection established: {peer_id}")
+            }
+            SwarmEvent::ConnectionClosed { peer_id, .. } => info!("Connection closed: {peer_id}"),
+            SwarmEvent::IncomingConnection { .. } => info!("Incoming connection"),
+            SwarmEvent::IncomingConnectionError { error, .. } => {
+                warn!("Incoming connection error: {error}")
+            }
+            SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+                warn!("Outgoing connection error for {peer_id:?}: {error}")
+            }
+            SwarmEvent::ExpiredListenAddr { address, .. } => {
+                warn!("Expired listen address: {address}")
+            }
+            SwarmEvent::ListenerClosed { .. } => {
+                info!("Listener closed")
+            }
+            SwarmEvent::ListenerError { error, .. } => warn!("Listener error: {error}"),
+            SwarmEvent::Dialing {
+                peer_id,
+                connection_id,
+            } => info!("Dialing {peer_id:?} on {connection_id:?} ..."),
+        }
+    }
 
     // Provide a signal that can be used to shut down the server.
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
