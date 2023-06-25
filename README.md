@@ -3,6 +3,10 @@
 A service to which you can yeet your files in order to yoink them from somewhere else.
 This is meant to simplify cluster-local file sharing with configurable persistence backends.
 
+One key aspect here is that a service like this can offload communication with object storage,
+databases or other systems, allowing the actual storage and retrieval within the application
+to be reduced to a simple HTTP POST and GET, given a file ID.
+
 ```mermaid
 sequenceDiagram
     autonumber
@@ -49,7 +53,8 @@ sequenceDiagram
 
 ### Storing Files
 
-* `/yeet` - Hands a file over to the service for storage.
+* `/yeet` - Hands a file over to the service for storage and returns its ID.
+* `/yoink/:id` - Retrieves a file from storage, given its ID.
 
 ### Metrics
 

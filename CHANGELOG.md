@@ -12,6 +12,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Prometheus/OpenMetrics metrics is available at `/metrics`.
 - Shutdown from SIGINT (e.g. CTRL-C), SIGTERM and similar is now possible.
 - The `transfer_size_total` and `transfer_total` metrics now track the number of bytes sent through the service.
+- The service can now be used to store and retrieve files locally.
 
 ### Internal
 
