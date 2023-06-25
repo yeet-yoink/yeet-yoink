@@ -1,6 +1,6 @@
 [package]
 name = "yeet-yoink"
-version = "0.0.0-unstable"
+version = "0.0.1"
 description ="A file storage API"
 license = "EUPL-1.2"
 keywords = ["file-storage", "cloud-storage"]

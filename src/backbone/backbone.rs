@@ -9,7 +9,6 @@ use axum::response::{IntoResponse, Response};
 use hyper::StatusCode;
 use shared_files::{SharedFileWriter, SharedTemporaryFile};
 use shortguid::ShortGuid;
-use std::borrow::Borrow;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -107,19 +106,6 @@ impl Backbone {
                 ))
             }
         }
-    }
-
-    /// Requests to remove an entry.
-    ///
-    /// Currently open writers or readers will continue to work.
-    /// When the last reference is closed, the file will be removed.
-    ///
-    /// However, no new readers can be created after this point.
-    pub async fn remove<I: Borrow<ShortGuid>>(&self, id: I) {
-        self.sender
-            .send(BackboneCommand::RemoveWriter(id.borrow().clone()))
-            .await
-            .ok();
     }
 
     async fn create_new_temporary_file(id: ShortGuid) -> Result<SharedTemporaryFile, NewFileError> {
