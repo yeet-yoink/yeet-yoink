@@ -12,6 +12,7 @@ use axum::routing::get;
 use axum::Router;
 use base64::Engine;
 use hyper::StatusCode;
+use mime_guess::get_mime_extensions_str;
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use shared_files::FileSize;
 use shortguid::ShortGuid;
@@ -75,6 +76,11 @@ async fn do_yoink(
         headers.push((header::CONTENT_LENGTH, size.to_string()));
     }
 
+    // The content type specified on file creation, or an empty string.
+    let content_type = file
+        .content_type()
+        .map_or(String::default(), |c| c.to_string());
+
     // Add ETag from SHA-256 hash, etc.
     if let Some(summary) = summary {
         headers.push((
@@ -97,23 +103,18 @@ async fn do_yoink(
             hex::encode(&summary.hashes.sha256[..]),
         ));
 
-        if let Some(file_name) = &summary.file_name {
-            let file_name = utf8_percent_encode(&file_name, &ASCII_CONTROLS).to_string();
-            headers.push((
-                header::CONTENT_DISPOSITION,
-                format!("attachment; filename=\"{file_name}\""),
-            ));
-        }
+        let file_name = &summary.file_name;
+
+        let header = content_disposition_from_optional_name(&id, &content_type, file_name);
+        headers.push(header);
     } else {
         // Use a default file name when none is known.
-        headers.push((
-            header::CONTENT_DISPOSITION,
-            format!("attachment; filename=\"{id}\""),
-        ));
+        let header = default_content_disposition_header(&id, &content_type);
+        headers.push(header);
     }
 
-    if let Some(content_type) = file.content_type() {
-        headers.push((header::CONTENT_TYPE, content_type.to_string()));
+    if !content_type.is_empty() {
+        headers.push((header::CONTENT_TYPE, content_type));
     }
 
     headers.push((header::AGE, file.file_age().as_secs().to_string()));
@@ -127,6 +128,49 @@ async fn do_yoink(
 
     let headers = AppendHeaders(headers);
     Ok((headers, body).into_response())
+}
+
+/// Attempts to generate a `Content-Disposition` header from the optionally specified
+/// file name. If no name was set, falls back to a generated file name based on the ID.
+fn content_disposition_from_optional_name(
+    id: &ShortGuid,
+    content_type: &String,
+    file_name: &Option<String>,
+) -> (HeaderName, String) {
+    if let Some(file_name) = file_name {
+        let file_name = utf8_percent_encode(&file_name, &ASCII_CONTROLS).to_string();
+        (
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{file_name}\""),
+        )
+    } else {
+        default_content_disposition_header(&id, &content_type)
+    }
+}
+
+/// Generates a `Content-Disposition` header based on the ID. If the `Content-Type` was specified,
+/// a default extension will be appended to the file.
+fn default_content_disposition_header(
+    id: &ShortGuid,
+    content_type: &String,
+) -> (HeaderName, String) {
+    if content_type.is_empty() {
+        (
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{id}\""),
+        )
+    } else {
+        // This approach currently produces .jpe for a JPEG file instead of the canonical .jpg
+        let ext = get_mime_extensions_str(&content_type)
+            .iter()
+            .flat_map(|x| x.iter())
+            .next()
+            .map_or("", |&c| c);
+        (
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{id}.{ext}\""),
+        )
+    }
 }
 
 impl From<GetReaderError> for Response {
