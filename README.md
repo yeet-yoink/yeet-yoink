@@ -1,11 +1,22 @@
 # yeet/yoink — A file storage and retrieval service
 
+![WIP](https://img.shields.io/badge/work_in_progress-yellow)
+![Latest version](https://img.shields.io/github/v/release/sunsided/yeet-yoink)
+![License](https://img.shields.io/github/license/sunsided/yeet-yoink)
+![Language](https://img.shields.io/github/languages/top/sunsided/yeet-yoink)
+![Build Status](https://github.com/sunsided/yeet-yoink/actions/workflows/rust.yml/badge.svg)
+![Issues](https://img.shields.io/github/issues/sunsided/yeet-yoink)
+![Dependency Status](https://img.shields.io/librariesio/github/sunsided/yeet-yoink)
+![Code size](https://img.shields.io/github/languages/code-size/sunsided/yeet-yoink)
+
 A service to which you can yeet your files in order to yoink them from somewhere else.
 This is meant to simplify cluster-local file sharing with configurable persistence backends.
 
 One key aspect here is that a service like this can offload communication with object storage,
 databases or other systems, allowing the actual storage and retrieval within the application
 to be reduced to a simple HTTP POST and GET, given a file ID.
+
+> ⚠️ **This service is work in progress.**
 
 ```mermaid
 sequenceDiagram
