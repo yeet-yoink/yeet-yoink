@@ -6,7 +6,7 @@ use crate::metrics::transfer::TransferMethod;
 use crate::metrics::transfer::TransferMetrics;
 use crate::AppState;
 use axum::body::HttpBody;
-use axum::extract::{BodyStream, State, TypedHeader};
+use axum::extract::{BodyStream, Query, State, TypedHeader};
 use axum::headers::{ContentLength, ContentType};
 use axum::http::HeaderValue;
 use axum::response::{IntoResponse, Response};
@@ -46,16 +46,20 @@ where
     }
 }
 
+#[derive(Debug, serde::Deserialize)]
+struct QueryParams {
+    file_name: Option<String>,
+}
+
 #[axum::debug_handler]
 async fn do_yeet(
     content_length: Option<TypedHeader<ContentLength>>,
     content_type: Option<TypedHeader<ContentType>>,
     content_md5: Option<TypedHeader<ContentMd5>>,
     State(state): State<AppState>,
+    query: Query<QueryParams>,
     stream: BodyStream,
 ) -> Result<Response, StatusCode> {
-    // TODO: Provide an optional file name and use as Content-Disposition when fetching
-
     TransferMetrics::track_transfer(TransferMethod::Store);
 
     let content_length = if let Some(TypedHeader(ContentLength(n))) = content_length {
@@ -81,11 +85,17 @@ async fn do_yeet(
 
     let id = ShortGuid::new_random();
 
-    // TODO: Allow capacity?
-    // TODO: Add server-side validation of MD5 value if header is present.
+    // TODO: Allow capacity? Test whether we have enough resources?
+
     let mut writer = match state
         .backbone
-        .new_file(id, content_length, content_type, content_md5)
+        .new_file(
+            id,
+            content_length,
+            content_type,
+            content_md5,
+            query.file_name.clone(),
+        )
         .await
     {
         Ok(writer) => writer,

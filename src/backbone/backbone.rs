@@ -49,6 +49,7 @@ impl Backbone {
         expected_size: Option<u64>,
         content_type: Option<ContentType>,
         content_md5: Option<[u8; 16]>,
+        file_name: Option<String>,
     ) -> Result<FileWriterGuard, NewFileError> {
         // We reuse the ID such that it is easier to find and debug the
         // created file if necessary.
@@ -80,7 +81,7 @@ impl Backbone {
             )),
         };
 
-        let writer = FileWriter::new(&id, writer);
+        let writer = FileWriter::new(&id, writer, file_name);
         Ok(FileWriterGuard::new(
             writer,
             sender,

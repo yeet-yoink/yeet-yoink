@@ -12,9 +12,23 @@ use axum::routing::get;
 use axum::Router;
 use base64::Engine;
 use hyper::StatusCode;
+use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use shared_files::FileSize;
 use shortguid::ShortGuid;
 use tokio_util::io::ReaderStream;
+
+/// Escape control set for URL/hex-encoding file names in the Content-Disposition header.
+static ASCII_CONTROLS: AsciiSet = CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'<')
+    .add(b'>')
+    .add(b'\\')
+    .add(b'^')
+    .add(b'`')
+    .add(b'{')
+    .add(b'|')
+    .add(b'}');
 
 pub trait YoinkRoutes {
     /// Provides an API for storing files.
@@ -82,6 +96,20 @@ async fn do_yoink(
             HeaderName::from_static("x-file-sha256"),
             hex::encode(&summary.hashes.sha256[..]),
         ));
+
+        if let Some(file_name) = &summary.file_name {
+            let file_name = utf8_percent_encode(&file_name, &ASCII_CONTROLS).to_string();
+            headers.push((
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{file_name}\""),
+            ));
+        }
+    } else {
+        // Use a default file name when none is known.
+        headers.push((
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{id}\""),
+        ));
     }
 
     if let Some(content_type) = file.content_type() {
@@ -89,12 +117,6 @@ async fn do_yoink(
     }
 
     headers.push((header::AGE, file.file_age().as_secs().to_string()));
-
-    // TODO: Provide an optional file name when storing
-    headers.push((
-        header::CONTENT_DISPOSITION,
-        format!("attachment; filename=\"{id}\""),
-    ));
 
     // Provide expiration header.
     let expiration_date = expiration_as_rfc1123(&file.expiration_date());

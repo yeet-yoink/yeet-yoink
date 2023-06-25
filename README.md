@@ -65,6 +65,10 @@ sequenceDiagram
 ### Storing Files
 
 * `/yeet` - Hands a file over to the service for storage and returns its ID.
+  * `?file_name=...` - Optional. Allows to specify name metadata for the file.
+
+### Retrieving files
+
 * `/yoink/:id` - Retrieves a file from storage, given its ID.
 
 ### Metrics

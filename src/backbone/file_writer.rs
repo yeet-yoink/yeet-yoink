@@ -20,11 +20,16 @@ pub struct FileWriter {
     inner: SharedTemporaryFileWriter,
     md5: HashMd5,
     sha256: HashSha256,
+    file_name: Option<String>,
     file_size: usize,
 }
 
 impl FileWriter {
-    pub fn new(id: &ShortGuid, inner: SharedTemporaryFileWriter) -> Self {
+    pub fn new(
+        id: &ShortGuid,
+        inner: SharedTemporaryFileWriter,
+        file_name: Option<String>,
+    ) -> Self {
         debug!(
             "Buffering payload for request {id} to {file:?}",
             file = inner.file_path()
@@ -34,6 +39,7 @@ impl FileWriter {
             inner,
             md5: HashMd5::new(),
             sha256: HashSha256::new(),
+            file_name,
             file_size: 0,
         }
     }
@@ -63,6 +69,7 @@ impl FileWriter {
         let summary = Arc::new(WriteSummary {
             expires: Instant::now() + expiration,
             hashes: FileHashes { sha256, md5 },
+            file_name: self.file_name,
             file_size_bytes: self.file_size,
         });
 
@@ -83,6 +90,8 @@ pub struct WriteSummary {
     pub expires: Instant,
     /// The file hashes.
     pub hashes: FileHashes,
+    /// The optional file name.
+    pub file_name: Option<String>,
     /// The file size in bytes.
     pub file_size_bytes: usize,
 }

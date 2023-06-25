@@ -1748,6 +1748,7 @@ dependencies = [
  "hyper",
  "lazy_static",
  "md5",
+ "percent-encoding",
  "pin-project",
  "problemdetails",
  "prometheus-client",
