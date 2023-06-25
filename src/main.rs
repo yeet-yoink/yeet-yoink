@@ -6,6 +6,10 @@ use axum::Router;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use hyper::Server;
+use libp2p::core::upgrade;
+use libp2p::{identity, noise, tcp, PeerId, Transport};
+use serde::{Deserialize, Serialize};
+use shortguid::ShortGuid;
 use std::net::SocketAddr;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -28,13 +32,31 @@ pub struct AppState {
     backbone: Arc<Backbone>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct FileMetadata {
+    id: ShortGuid,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct MetadataAnnounce {
+    metadata: FileMetadata,
+}
+
 #[tokio::main]
-async fn main() -> ExitCode {
+async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     let matches = commands::build_command().get_matches();
 
     logging::initialize_from_matches(&matches);
     info!("Hi. 👋");
+
+    info!("Generating Ed25519 keypair ...");
+    let local_key = identity::Keypair::generate_ed25519();
+    let local_peer_id = PeerId::from(local_key.public());
+    info!("Local peer ID: {local_peer_id}");
+
+    // TODO: Replace with custom transport creation.
+    let transport = libp2p::tokio_development_transport(local_key)?;
 
     // Provide a signal that can be used to shut down the server.
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
@@ -78,7 +100,7 @@ async fn main() -> ExitCode {
 
                 // No servers are currently running since no await was called on any
                 // of them yet. Therefore, exiting here is "graceful".
-                return ExitCode::from(exitcode::NOPERM as u8);
+                return Ok(ExitCode::from(exitcode::NOPERM as u8));
             }
         };
 
@@ -112,11 +134,11 @@ async fn main() -> ExitCode {
     }
 
     if let Some(error_code) = exit_code {
-        return error_code;
+        return Ok(error_code);
     }
 
     info!("Bye. 👋");
-    ExitCode::SUCCESS
+    Ok(ExitCode::SUCCESS)
 }
 
 fn register_shutdown_handler(shutdown_tx: Sender<()>) {
