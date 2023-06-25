@@ -12,7 +12,7 @@ use axum::routing::get;
 use axum::Router;
 use base64::Engine;
 use hyper::StatusCode;
-use mime_guess::get_mime_extensions_str;
+use mime_db::extension;
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use shared_files::FileSize;
 use shortguid::ShortGuid;
@@ -160,16 +160,19 @@ fn default_content_disposition_header(
             format!("attachment; filename=\"{id}\""),
         )
     } else {
-        // This approach currently produces .jpe for a JPEG file instead of the canonical .jpg
-        let ext = get_mime_extensions_str(&content_type)
-            .iter()
-            .flat_map(|x| x.iter())
-            .next()
-            .map_or("", |&c| c);
-        (
-            header::CONTENT_DISPOSITION,
-            format!("attachment; filename=\"{id}.{ext}\""),
-        )
+        // See also https://github.com/viz-rs/mime-db/pull/9
+        let ext = extension(&content_type).unwrap_or("");
+        if ext.is_empty() {
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{id}\""),
+            )
+        } else {
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{id}.{ext}\""),
+            )
+        }
     }
 }
 
