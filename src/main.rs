@@ -9,12 +9,13 @@ use hyper::Server;
 use libp2p::core::upgrade;
 use libp2p::swarm::derive_prelude::Either;
 use libp2p::swarm::{keep_alive, NetworkBehaviour, SwarmBuilder, SwarmEvent};
-use libp2p::{identity, noise, ping, tcp, Multiaddr, PeerId, Transport};
+use libp2p::{identity, mdns, noise, ping, tcp, Multiaddr, PeerId, Transport};
 use serde::{Deserialize, Serialize};
 use shortguid::ShortGuid;
 use std::net::SocketAddr;
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Sender;
 use tower::ServiceBuilder;
@@ -48,10 +49,11 @@ struct MetadataAnnounce {
 ///
 /// For illustrative purposes, this includes the [`KeepAlive`](behaviour::KeepAlive) behaviour so a continuous sequence of
 /// pings can be observed.
-#[derive(NetworkBehaviour, Default)]
+#[derive(NetworkBehaviour)]
 struct Behaviour {
     keep_alive: keep_alive::Behaviour,
     ping: ping::Behaviour,
+    mdns: mdns::tokio::Behaviour,
 }
 
 #[tokio::main]
@@ -71,8 +73,22 @@ async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     // TODO: Replace with custom transport creation.
     let transport = libp2p::tokio_development_transport(local_key)?;
 
+    // mDNS
+    let mdns = mdns::tokio::Behaviour::new(
+        mdns::Config {
+            enable_ipv6: false,
+            ttl: Duration::from_secs(300),
+            query_interval: Duration::from_secs(300),
+        },
+        local_peer_id,
+    )?;
+
     // The behavior defines what data to send.
-    let behaviour = Behaviour::default();
+    let behaviour = Behaviour {
+        keep_alive: Default::default(),
+        ping: Default::default(),
+        mdns,
+    };
 
     // The swarm combines the transport with the behavior, driving both.
     let mut swarm = SwarmBuilder::with_tokio_executor(transport, behaviour, local_peer_id).build();
