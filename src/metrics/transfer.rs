@@ -62,17 +62,21 @@ pub(crate) fn register_transfer_metrics(registry: &mut Registry) {
 pub struct TransferMetrics;
 
 impl TransferMetrics {
-    /// Tracks one call to the specified transfer method and the payload size.
-    pub fn track<M: Into<TransferMethod>>(transfer: M, bytes: usize) {
-        let transfer = transfer.into();
+    /// Tracks one call to the specified transfer method.
+    pub fn track_transfer<M: Into<TransferMethod>>(transfer: M) {
+        TRANSFER_COUNT
+            .get_or_create(&Labels {
+                method: transfer.into(),
+            })
+            .inc();
+    }
+
+    /// Tracks an increase in transfer payload size.
+    pub fn track_bytes_transferred<M: Into<TransferMethod>>(transfer: M, bytes: usize) {
         TRANSFER_SIZES
             .get_or_create(&Labels {
-                method: transfer.clone(),
+                method: transfer.into(),
             })
             .inc_by(bytes as _);
-
-        TRANSFER_COUNT
-            .get_or_create(&Labels { method: transfer })
-            .inc();
     }
 }

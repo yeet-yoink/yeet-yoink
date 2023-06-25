@@ -59,7 +59,7 @@ impl FileWriterGuard {
             let bytes_written = writer.write(chunk).await?;
             self.file_size += bytes_written as u64;
 
-            TransferMetrics::track(TransferMethod::Store, bytes_written);
+            TransferMetrics::track_bytes_transferred(TransferMethod::Store, bytes_written);
 
             // Ensure we don't store more bytes than anticipated.
             // This check only happens when we have a Content-Length header (or similar)

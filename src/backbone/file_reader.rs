@@ -70,7 +70,7 @@ impl AsyncRead for FileReader {
         match Pin::new(&mut self.inner).poll_read(cx, buf) {
             Poll::Ready(read) => {
                 let bytes_read = buf.filled().len();
-                TransferMetrics::track(TransferMethod::Fetch, bytes_read);
+                TransferMetrics::track_bytes_transferred(TransferMethod::Fetch, bytes_read);
                 Poll::Ready(read)
             }
             Poll::Pending => Poll::Pending,

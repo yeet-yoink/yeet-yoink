@@ -2,6 +2,8 @@
 
 use crate::backbone::{CompletionMode, FileHashes};
 use crate::expiration_as_rfc1123;
+use crate::metrics::transfer::TransferMethod;
+use crate::metrics::transfer::TransferMetrics;
 use crate::AppState;
 use axum::body::HttpBody;
 use axum::extract::{BodyStream, State, TypedHeader};
@@ -53,6 +55,8 @@ async fn do_yeet(
     stream: BodyStream,
 ) -> Result<Response, StatusCode> {
     // TODO: Provide an optional file name and use as Content-Disposition when fetching
+
+    TransferMetrics::track_transfer(TransferMethod::Store);
 
     let content_length = if let Some(TypedHeader(ContentLength(n))) = content_length {
         trace!("Expecting {value} bytes", value = n);

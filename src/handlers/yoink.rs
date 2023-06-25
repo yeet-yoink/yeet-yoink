@@ -2,6 +2,7 @@
 
 use crate::backbone::GetReaderError;
 use crate::expiration_as_rfc1123;
+use crate::metrics::transfer::{TransferMethod, TransferMetrics};
 use crate::AppState;
 use axum::body::{HttpBody, StreamBody};
 use axum::extract::{Path, State};
@@ -50,6 +51,8 @@ async fn do_yoink(
         Ok(file) => file,
         Err(e) => return Ok(e.into()),
     };
+
+    TransferMetrics::track_transfer(TransferMethod::Fetch);
 
     let summary = file.summary();
 
