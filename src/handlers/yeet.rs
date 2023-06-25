@@ -147,8 +147,6 @@ async fn do_yeet(
         }
     };
 
-    TransferMetrics::track(TransferMethod::Store, bytes_written);
-
     debug!(
         "Stream ended, buffered {bytes} bytes to disk; {hashes}",
         bytes = bytes_written,

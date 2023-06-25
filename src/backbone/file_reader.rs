@@ -1,4 +1,5 @@
 use crate::backbone::WriteSummary;
+use crate::metrics::transfer::{TransferMethod, TransferMetrics};
 use axum::headers::ContentType;
 use shared_files::{FileSize, SharedTemporaryFileReader};
 use std::borrow::Cow;
@@ -68,7 +69,8 @@ impl AsyncRead for FileReader {
     ) -> Poll<std::io::Result<()>> {
         match Pin::new(&mut self.inner).poll_read(cx, buf) {
             Poll::Ready(read) => {
-                // TODO: Increment metrics for reading from the file
+                let bytes_read = buf.filled().len();
+                TransferMetrics::track(TransferMethod::Fetch, bytes_read);
                 Poll::Ready(read)
             }
             Poll::Pending => Poll::Pending,

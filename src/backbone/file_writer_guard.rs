@@ -1,5 +1,6 @@
 use crate::backbone::file_writer::{err_broken_pipe, FileWriter, FinalizationError, WriteSummary};
 use crate::backbone::CompletionMode;
+use crate::metrics::transfer::{TransferMethod, TransferMetrics};
 use std::io::ErrorKind;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
@@ -55,8 +56,10 @@ impl FileWriterGuard {
 
     pub async fn write(&mut self, chunk: &[u8]) -> std::io::Result<usize> {
         if let Some(ref mut writer) = self.inner {
-            let bytes = writer.write(chunk).await?;
-            self.file_size += bytes as u64;
+            let bytes_written = writer.write(chunk).await?;
+            self.file_size += bytes_written as u64;
+
+            TransferMetrics::track(TransferMethod::Store, bytes_written);
 
             // Ensure we don't store more bytes than anticipated.
             // This check only happens when we have a Content-Length header (or similar)
@@ -71,7 +74,7 @@ impl FileWriterGuard {
                 }
             }
 
-            Ok(bytes)
+            Ok(bytes_written)
         } else {
             err_broken_pipe()
         }
