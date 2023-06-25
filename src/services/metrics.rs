@@ -127,9 +127,10 @@ where
 struct HttpCallMetricTracker {
     version: Version,
     method: hyper::Method,
-    path: String,
+    path_base: String,
     start: Instant,
     state: Cell<ResultState>,
+    path_full: String,
 }
 
 pub enum ResultState {
@@ -146,16 +147,28 @@ pub enum ResultState {
 impl HttpCallMetricTracker {
     fn start<B>(request: &Request<B>) -> Self {
         let method = request.method().clone();
-        let path = request.uri().path().to_string();
+        let path = request.uri().path();
         let version = request.version();
 
-        debug!("Start processing {version:?} {method} {path}");
-        HttpMetrics::inc_in_flight(path.as_str());
+        // Ensure we don't create a new metric for every file name, i.e.
+        // /yoink/4d6DOAMKQ5uhlE6eXKM_dQ should be tracked as /yoink.
+        let path_str = path.to_string();
+        let path_base = match path[1..].find('/') {
+            None => path_str.clone(),
+            Some(pos) => String::from(&path[0..(pos + 1)]),
+        };
+
+        debug!(
+            "Start processing {version:?} {method} {path} (tracking as {path_base})",
+            path = path_str
+        );
+        HttpMetrics::inc_in_flight(path_base.as_str());
         let start = Instant::now();
         Self {
             version,
             method,
-            path,
+            path_full: path_str,
+            path_base,
             start,
             state: Cell::new(ResultState::Started),
         }
@@ -187,10 +200,10 @@ impl Drop for HttpCallMetricTracker {
                     "Fail processing {version:?} {method} {path} - {duration:?}",
                     version = self.version,
                     method = self.method,
-                    path = self.path,
+                    path = self.path_full,
                     duration = duration
                 );
-                HttpMetrics::track(&self.path, self.method.clone(), 0, duration);
+                HttpMetrics::track(&self.path_base, self.method.clone(), 0, duration);
             }
             ResultState::Result(status, version) => {
                 let duration = self.duration();
@@ -198,15 +211,20 @@ impl Drop for HttpCallMetricTracker {
                         "Done processing {version:?} {method} {path}: {response_version:?} {response_status} - {duration:?}",
                         version = self.version,
                         method = self.method,
-                        path = self.path,
+                        path = self.path_full,
                         duration = duration,
                         response_version = version,
                         response_status = status
                     );
-                HttpMetrics::track(&self.path, self.method.clone(), status.as_u16(), duration);
+                HttpMetrics::track(
+                    &self.path_base,
+                    self.method.clone(),
+                    status.as_u16(),
+                    duration,
+                );
             }
         }
 
-        HttpMetrics::dec_in_flight(self.path.as_str());
+        HttpMetrics::dec_in_flight(self.path_base.as_str());
     }
 }

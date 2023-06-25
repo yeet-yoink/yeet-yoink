@@ -20,6 +20,7 @@ pub trait YoinkRoutes {
     ///
     /// ```http
     /// GET /yoink/KmC6e8laTnK3dioUSMpM0Q HTTP/1.1
+    ///
     /// Content-Length: 1024
     /// Content-Type: application/my-type
     ///
@@ -34,6 +35,7 @@ where
     axum::body::Bytes: From<<B as HttpBody>::Data>,
     <B as HttpBody>::Error: std::error::Error + Send + Sync,
 {
+    // Ensure HttpCallMetricTracker is updated.
     fn map_yoink_endpoint(self) -> Self {
         self.route("/yoink/:id", get(do_yoink))
     }

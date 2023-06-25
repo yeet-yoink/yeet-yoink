@@ -2,7 +2,6 @@
 
 use crate::backbone::{CompletionMode, FileHashes};
 use crate::expiration_as_rfc1123;
-use crate::metrics::transfer::{TransferMethod, TransferMetrics};
 use crate::AppState;
 use axum::body::HttpBody;
 use axum::extract::{BodyStream, State, TypedHeader};
@@ -39,6 +38,7 @@ where
     axum::body::Bytes: From<<B as HttpBody>::Data>,
     <B as HttpBody>::Error: std::error::Error + Send + Sync,
 {
+    // Ensure HttpCallMetricTracker is updated.
     fn map_yeet_endpoint(self) -> Self {
         self.route("/yeet", post(do_yeet))
     }

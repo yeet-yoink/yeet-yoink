@@ -20,6 +20,7 @@ impl<B> ShutdownRoutes for Router<AppState, B>
 where
     B: HttpBody + Send + 'static,
 {
+    // Ensure HttpCallMetricTracker is updated.
     fn map_shutdown_endpoint(self) -> Self {
         self.route("/stop", post(shutdown))
     }

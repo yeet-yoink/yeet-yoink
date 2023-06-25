@@ -19,6 +19,7 @@ where
     S: Clone + Send + Sync + 'static,
     B: HttpBody + Send + 'static,
 {
+    // Ensure HttpCallMetricTracker is updated.
     fn map_metrics_endpoint(self) -> Self {
         self.route("/metrics", get(render_metrics))
     }

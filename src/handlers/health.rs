@@ -62,6 +62,7 @@ where
     B: HttpBody + Send + 'static,
 {
     fn map_health_endpoints(self) -> Self {
+        // Ensure HttpCallMetricTracker is updated.
         self.route(
             "/health",
             health_endpoint(HealthCheck::Full(HealthCheckFormat::Compact)),
