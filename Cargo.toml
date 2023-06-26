@@ -26,7 +26,7 @@ headers-content-md5 = "0.1.0"
 hex = "0.4.3"
 hyper = { version = "0.14.26", features = ["http1", "http2", "server", "h2"] }
 lazy_static = "1.4.0"
-libp2p = { version = "0.52.0", features = ["tcp", "dns", "tokio", "noise", "yamux", "websocket", "ping", "macros", "mdns"] }
+libp2p = { version = "0.52.0", features = ["tcp", "dns", "tokio", "noise", "yamux", "websocket", "ping", "macros", "mdns", "ed25519", "full", "gossipsub"] }
 md5 = "0.7.0"
 mime-db = "1.6.0"
 percent-encoding = "2.3.0"
