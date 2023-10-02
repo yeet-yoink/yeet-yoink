@@ -6,6 +6,7 @@ use axum::Router;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use hyper::Server;
+use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -28,10 +29,27 @@ pub struct AppState {
     backbone: Arc<Backbone>,
 }
 
+#[derive(Default, Debug, Serialize, Deserialize)]
+struct MyConfig {
+    version: u8,
+    api_key: String,
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     dotenvy::dotenv().ok();
     let matches = commands::build_command().get_matches();
+
+    let cfg: MyConfig = match confy::load("yeet-yoink", "default") {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            error!("Unable to load configuration: {error}", error = e);
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let file = confy::get_configuration_file_path("yeet-yoink", "test").expect("lol");
+    println!("File: {file:?}");
 
     logging::initialize_from_matches(&matches);
     info!("Hi. 👋");
