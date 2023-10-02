@@ -1,0 +1,17 @@
+### Get metrics
+GET http://{{host}}:{{port}}/metrics
+
+### Run startup probes
+GET http://{{host}}:{{port}}/startupz
+
+### Run readiness probes
+GET http://{{host}}:{{port}}/readyz
+
+### Run liveness probes
+GET http://{{host}}:{{port}}/livez
+
+### Run all health checks
+GET http://{{host}}:{{port}}/health
+
+### Run all health check in human-readable format
+GET http://{{host}}:{{port}}/healthz
