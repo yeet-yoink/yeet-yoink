@@ -94,12 +94,12 @@ async fn do_yoink(
         ));
 
         headers.push((
-            HeaderName::from_static("x-file-md5"),
+            HeaderName::from_static("yy-file-md5"),
             hex::encode(&summary.hashes.md5[..]),
         ));
 
         headers.push((
-            HeaderName::from_static("x-file-sha256"),
+            HeaderName::from_static("yy-file-sha256"),
             hex::encode(&summary.hashes.sha256[..]),
         ));
 
