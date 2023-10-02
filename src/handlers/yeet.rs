@@ -8,7 +8,7 @@ use crate::AppState;
 use axum::body::HttpBody;
 use axum::extract::{BodyStream, Query, State, TypedHeader};
 use axum::headers::{ContentLength, ContentType};
-use axum::http::HeaderValue;
+use axum::http::{HeaderName, HeaderValue};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::Router;
@@ -20,6 +20,8 @@ use serde::Serialize;
 use shortguid::ShortGuid;
 use tokio_stream::StreamExt;
 use tracing::{debug, trace};
+
+static ID_HEADER: HeaderName = HeaderName::from_static("yy-id");
 
 pub trait YeetRoutes {
     /// Provides an API for storing files.
@@ -178,9 +180,17 @@ async fn do_yeet(
 
     *response.status_mut() = StatusCode::CREATED;
     let headers = response.headers_mut();
+
+    // Set the file expiration.
     headers
         .entry(EXPIRES)
         .or_insert(HeaderValue::from_str(&expiration_date).expect("invalid time input provided"));
+
+    // Add the ID as a separate header to simplify testing.
+    let id = format!("{id}");
+    headers
+        .entry(&ID_HEADER)
+        .or_insert(HeaderValue::from_str(&id).expect("invalid ID input provided"));
 
     Ok(response)
 }
