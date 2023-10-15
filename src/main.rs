@@ -1,12 +1,18 @@
 #![forbid(unused_must_use)]
+// only enables the `doc_cfg` feature when
+// the `docsrs` configuration attribute is defined
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
+use crate::app_config::{load_config, AppConfig};
 use crate::backbone::Backbone;
 use crate::handlers::*;
 use axum::Router;
+use config::builder::DefaultState;
+use config::{ConfigBuilder, File, FileFormat};
+use directories::ProjectDirs;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use hyper::Server;
-use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -15,7 +21,9 @@ use tokio::sync::broadcast::Sender;
 use tower::ServiceBuilder;
 use tracing::{error, info, warn};
 
+mod app_config;
 mod backbone;
+mod backends;
 mod commands;
 mod handlers;
 mod health;
@@ -29,29 +37,27 @@ pub struct AppState {
     backbone: Arc<Backbone>,
 }
 
-#[derive(Default, Debug, Serialize, Deserialize)]
-struct MyConfig {
-    version: u8,
-    api_key: String,
-}
-
 #[tokio::main]
 async fn main() -> ExitCode {
     dotenvy::dotenv().ok();
     let matches = commands::build_command().get_matches();
+    logging::initialize_from_matches(&matches);
 
-    let cfg: MyConfig = match confy::load("yeet-yoink", "default") {
-        Ok(cfg) => cfg,
-        Err(e) => {
-            error!("Unable to load configuration: {error}", error = e);
+    let dirs = match ProjectDirs::from("io.github", "sunsided", "yeet-yoink") {
+        Some(dirs) => dirs,
+        None => {
+            error!("Could not determine the project directories");
             return ExitCode::FAILURE;
         }
     };
 
-    let file = confy::get_configuration_file_path("yeet-yoink", "test").expect("lol");
-    println!("File: {file:?}");
+    let cfg: AppConfig = match load_config(dirs.config_local_dir()) {
+        Ok(config) => config,
+        Err(e) => {
+            return ExitCode::FAILURE;
+        }
+    };
 
-    logging::initialize_from_matches(&matches);
     info!("Hi. 👋");
 
     // Provide a signal that can be used to shut down the server.
