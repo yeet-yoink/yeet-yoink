@@ -86,3 +86,9 @@ sequenceDiagram
 ### Shutdown
 
 * `/stop` - Initiates a graceful shutdown.
+
+## Example run
+
+```shell
+cargo run --bin yeet-yoink -- --http 127.0.0.1:8080 --http 127.0.1.1:8081 -c example-config.yaml
+```
