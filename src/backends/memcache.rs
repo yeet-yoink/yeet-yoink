@@ -12,7 +12,10 @@ impl ConnectionString {
     fn new<S: AsRef<str>>(url: S) -> Result<Self, ConnectionStringError> {
         let parsed_url = Url::parse(url.as_ref());
         match parsed_url {
-            Ok(url) => Ok(ConnectionString(url.to_string())),
+            Ok(url) => {
+                // TODO: Ensure the protocol part is "memcache://"
+                Ok(ConnectionString(url.to_string()))
+            }
             Err(_) => Err(ConnectionStringError::InvalidFormat),
         }
     }
