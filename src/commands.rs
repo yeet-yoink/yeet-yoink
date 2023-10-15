@@ -1,6 +1,7 @@
 use crate::logging::LoggingStyle;
 use clap::{Arg, Command};
 use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 pub fn build_command() -> Command {
@@ -31,6 +32,17 @@ pub fn build_command() -> Command {
                 .action(clap::ArgAction::Append)
                 .value_parser(socket_addr)
                 .help_heading("Server"),
+        )
+        .arg(
+            Arg::new("config_file")
+                .short('c')
+                .long("config")
+                .env("APP_CONFIG_FILE")
+                .value_name("PATH")
+                .value_parser(valid_file)
+                .value_hint(clap::ValueHint::FilePath)
+                .help("The config file to load")
+                .help_heading("Configuration"),
         );
     command
 }
@@ -46,4 +58,13 @@ fn logging_style(s: &str) -> Result<LoggingStyle, String> {
 
 fn socket_addr(s: &str) -> Result<SocketAddr, String> {
     SocketAddr::from_str(s).map_err(|e| format!("{e}"))
+}
+
+fn valid_file(value: &str) -> Result<PathBuf, String> {
+    let path = PathBuf::from(&value);
+    if path.is_file() {
+        Ok(path)
+    } else {
+        Err("The provided path does not point to an existing file.".to_string())
+    }
 }

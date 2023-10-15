@@ -7,8 +7,6 @@ use crate::app_config::{load_config, AppConfig};
 use crate::backbone::Backbone;
 use crate::handlers::*;
 use axum::Router;
-use config::builder::DefaultState;
-use config::{ConfigBuilder, File, FileFormat};
 use directories::ProjectDirs;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
@@ -51,7 +49,7 @@ async fn main() -> ExitCode {
         }
     };
 
-    let cfg: AppConfig = match load_config(dirs.config_local_dir()) {
+    let cfg: AppConfig = match load_config(dirs.config_local_dir(), &matches) {
         Ok(config) => config,
         Err(e) => {
             return ExitCode::FAILURE;
