@@ -15,22 +15,7 @@ pub struct AppConfig {
 pub struct BackendsConfig {
     #[cfg_attr(docsrs, doc(cfg(feature = "memcache")))]
     #[cfg(feature = "memcache")]
-    pub memcache: Vec<MemcacheBackendConfig>,
-}
-
-#[cfg_attr(docsrs, doc(cfg(feature = "memcache")))]
-#[cfg(feature = "memcache")]
-#[derive(Default, Debug, Serialize, Deserialize)]
-pub struct MemcacheBackendConfig {
-    /// A tag to identify the backend.
-    pub tag: String,
-    /// The connection string
-    ///
-    /// ## Example
-    /// ```text
-    /// memcache://127.0.0.1:12345?timeout=10&tcp_nodelay=true
-    /// ```
-    pub connection_string: crate::backends::memcache::ConnectionString,
+    pub memcache: Vec<crate::backends::memcache::MemcacheBackendConfig>,
 }
 
 pub fn load_config(config_dir: &Path, matches: &ArgMatches) -> Result<AppConfig, anyhow::Error> {
@@ -74,27 +59,5 @@ pub fn load_config(config_dir: &Path, matches: &ArgMatches) -> Result<AppConfig,
             error!("Unable to deserialize configuration: {error}", error = e);
             Err(e.into())
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    #[cfg(feature = "memcache")]
-    fn deserialize_memcache_works() {
-        let yaml = r#"
-            tag: memcache-1
-            connection_string: "memcache://127.0.0.1:12345?timeout=10&tcp_nodelay=true"
-        "#;
-
-        let config: MemcacheBackendConfig =
-            serde_yaml::from_str(yaml).expect("Failed to deserialize Memcache config");
-        assert_eq!(config.tag, "memcache-1");
-        assert_eq!(
-            config.connection_string,
-            "memcache://127.0.0.1:12345?timeout=10&tcp_nodelay=true"
-        );
     }
 }
