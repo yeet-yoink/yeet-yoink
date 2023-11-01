@@ -1,7 +1,7 @@
 use crate::logging::LoggingStyle;
 use clap::{Arg, Command};
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::str::FromStr;
 
 pub fn build_command() -> Command {

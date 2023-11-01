@@ -4,7 +4,22 @@ use r2d2_memcache::MemcacheConnectionManager;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::str::FromStr;
 
-/// A memcache connection string.
+#[cfg_attr(docsrs, doc(cfg(feature = "memcache")))]
+#[cfg(feature = "memcache")]
+#[derive(Default, Debug, Serialize, Deserialize)]
+pub struct MemcacheBackendConfig {
+    /// A tag to identify the backend.
+    pub tag: String,
+    /// The connection string
+    ///
+    /// ## Example
+    /// ```text
+    /// memcache://127.0.0.1:12345?timeout=10&tcp_nodelay=true
+    /// ```
+    pub connection_string: crate::backends::memcache::ConnectionString,
+}
+
+/// A Memcached connection string.
 #[derive(Debug, Default)]
 pub struct ConnectionString(String);
 
@@ -13,8 +28,11 @@ impl ConnectionString {
         let parsed_url = Url::parse(url.as_ref());
         match parsed_url {
             Ok(url) => {
-                // TODO: Ensure the protocol part is "memcache://"
-                Ok(ConnectionString(url.to_string()))
+                if url.scheme() != "memcache" {
+                    Err(ConnectionStringError::InvalidFormat)
+                } else {
+                    Ok(ConnectionString(url.to_string()))
+                }
             }
             Err(_) => Err(ConnectionStringError::InvalidFormat),
         }
@@ -167,6 +185,22 @@ mod tests {
                 .expect("Deserialization failed");
         assert_eq!(
             valid_result,
+            "memcache://127.0.0.1:12345?timeout=10&tcp_nodelay=true"
+        );
+    }
+
+    #[test]
+    fn deserialize_memcache_config_works() {
+        let yaml = r#"
+            tag: memcache-1
+            connection_string: "memcache://127.0.0.1:12345?timeout=10&tcp_nodelay=true"
+        "#;
+
+        let config: MemcacheBackendConfig =
+            serde_yaml::from_str(yaml).expect("Failed to deserialize Memcache config");
+        assert_eq!(config.tag, "memcache-1");
+        assert_eq!(
+            config.connection_string,
             "memcache://127.0.0.1:12345?timeout=10&tcp_nodelay=true"
         );
     }
