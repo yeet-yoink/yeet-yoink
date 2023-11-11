@@ -3,7 +3,7 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::str::FromStr;
 
 /// A Memcached connection string.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct MemcacheConnectionString(String);
 
 impl MemcacheConnectionString {
@@ -82,6 +82,12 @@ impl r2d2_memcache::memcache::Connectable for MemcacheConnectionString {
 impl PartialEq<&str> for MemcacheConnectionString {
     fn eq(&self, other: &&str) -> bool {
         self.0.eq(other)
+    }
+}
+
+impl r2d2_memcache::memcache::Connectable for &MemcacheConnectionString {
+    fn get_urls(self) -> Vec<String> {
+        vec![self.0.clone()]
     }
 }
 

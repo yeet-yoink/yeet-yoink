@@ -1,5 +1,5 @@
 ### Yeet: Upload a JSON file
-POST http://{{host}}:{{port}}/yeet
+POST http://{{host}}:{{port}}/yeet?file_name=test-static.json
 Content-Type: application/json
 
 {
@@ -71,7 +71,7 @@ GET http://{{host}}:{{port}}/yoink/{{file_id}}
 %}
 
 ### Yeet: Upload a JSON file (dynamic content)
-POST http://{{host}}:{{port}}/yeet
+POST http://{{host}}:{{port}}/yeet?file_name=test-dynamic.json
 Content-Type: application/json
 
 {

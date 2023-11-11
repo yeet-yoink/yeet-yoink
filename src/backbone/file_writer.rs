@@ -31,6 +31,7 @@ impl FileWriter {
         file_name: Option<String>,
     ) -> Self {
         debug!(
+            file_id = %id,
             "Buffering payload for request {id} to {file:?}",
             file = inner.file_path()
         );

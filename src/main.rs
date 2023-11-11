@@ -5,6 +5,7 @@
 
 use crate::app_config::{load_config, AppConfig};
 use crate::backbone::Backbone;
+use crate::backends::Backend;
 use crate::handlers::*;
 use axum::Router;
 use directories::ProjectDirs;
@@ -41,6 +42,8 @@ async fn main() -> ExitCode {
     let matches = commands::build_command().get_matches();
     logging::initialize_from_matches(&matches);
 
+    info!("Hi. 👋");
+
     let dirs = match ProjectDirs::from("io.github", "sunsided", "yeet-yoink") {
         Some(dirs) => dirs,
         None => {
@@ -56,14 +59,36 @@ async fn main() -> ExitCode {
         }
     };
 
-    info!("Hi. 👋");
-
     // Provide a signal that can be used to shut down the server.
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
     register_shutdown_handler(shutdown_tx.clone());
 
-    let backbone = Backbone::default();
+    let mut backbone = Backbone::default();
     // TODO: Create and register backends.
+    #[cfg(feature = "memcache")]
+    {
+        match Vec::<backends::memcache::MemcacheBackend>::try_from(&cfg) {
+            Ok(backends) => {
+                if !backends.is_empty() {
+                    info!(
+                        "Registering {count} Memcached backend{plural}",
+                        count = backends.len(),
+                        plural = if backends.len() == 1 { "" } else { "s" }
+                    );
+                    backbone.add_backends(
+                        backends
+                            .into_iter()
+                            .map(Box::new)
+                            .map(|b| b as Box<dyn Backend>),
+                    );
+                }
+            }
+            Err(e) => {
+                error!("Failed to initialize Memcached backends: {}", e);
+                return ExitCode::FAILURE;
+            }
+        };
+    }
 
     // The application state is shared with the Axum servers.
     let app_state = AppState {
@@ -94,11 +119,13 @@ async fn main() -> ExitCode {
 
     let mut servers = FuturesUnordered::new();
     for addr in http_sockets {
-        info!("Binding to {addr}", addr = addr);
         let mut shutdown_rx = shutdown_tx.subscribe();
 
         let builder = match Server::try_bind(&addr) {
-            Ok(builder) => builder,
+            Ok(builder) => {
+                info!("Now listening on http://{addr}", addr = addr);
+                builder
+            }
             Err(e) => {
                 error!("Unable to bind to {addr}: {error}", addr = addr, error = e);
 

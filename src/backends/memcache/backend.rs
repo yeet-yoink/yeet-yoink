@@ -1,22 +1,58 @@
-use crate::backends::memcache::MemcacheConnectionString;
+use crate::app_config::AppConfig;
+use crate::backends::memcache::{MemcacheBackendConfig, MemcacheConnectionString};
+use crate::backends::Backend;
 use memcache::Client;
 use r2d2::Pool;
 use r2d2_memcache::MemcacheConnectionManager;
 use std::str::FromStr;
 
 pub struct MemcacheBackend {
+    /// The tag identifying the backend.
+    tag: String,
     /// The connection pool
     pool: Pool<MemcacheConnectionManager>,
 }
 
 impl MemcacheBackend {
     pub fn try_new(
-        connection_string: MemcacheConnectionString,
+        config: &MemcacheBackendConfig,
     ) -> Result<Self, MemcacheBackendConstructionError> {
-        let manager = MemcacheConnectionManager::new(connection_string);
-        let pool = Pool::new(manager)
+        let manager = MemcacheConnectionManager::new(&config.connection_string);
+        let pool = Pool::builder()
+            .min_idle(Some(1))
+            .build(manager)
             .map_err(|e| MemcacheBackendConstructionError::FailedToCreatePool(e))?;
-        Ok(Self { pool })
+        Ok(Self {
+            tag: config.tag.clone(),
+            pool,
+        })
+    }
+}
+
+impl Backend for MemcacheBackend {
+    fn backend_info(&self) -> &str {
+        "Memcached"
+    }
+
+    fn tag(&self) -> &str {
+        &self.tag
+    }
+}
+
+impl TryFrom<&AppConfig> for Vec<MemcacheBackend> {
+    type Error = MemcacheBackendConstructionError;
+
+    fn try_from(value: &AppConfig) -> Result<Self, Self::Error> {
+        if value.backends.memcache.is_empty() {
+            return Ok(Vec::default());
+        }
+
+        value
+            .backends
+            .memcache
+            .iter()
+            .map(MemcacheBackend::try_new)
+            .collect()
     }
 }
 
