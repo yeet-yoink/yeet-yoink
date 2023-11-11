@@ -164,6 +164,7 @@ async fn do_yeet(
     };
 
     debug!(
+        file_id = %id,
         "Stream ended, buffered {bytes} bytes to disk; {hashes}",
         bytes = bytes_written,
         hashes = write_result.hashes

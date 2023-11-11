@@ -3,6 +3,7 @@ use crate::backbone::file_record::{FileRecord, GetReaderError};
 use crate::backbone::file_writer::FileWriter;
 use crate::backbone::file_writer_guard::FileWriterGuard;
 use crate::backbone::WriteSummary;
+use crate::backends::Backend;
 use async_tempfile::TempFile;
 use axum::headers::ContentType;
 use axum::response::{IntoResponse, Response};
@@ -26,6 +27,7 @@ pub const TEMPORAL_LEASE: Duration = Duration::from_secs(5 * 60);
 pub struct Backbone {
     inner: Arc<RwLock<Inner>>,
     sender: mpsc::Sender<BackboneCommand>,
+    backends: Vec<Box<dyn Backend>>,
 }
 
 struct Inner {
@@ -39,7 +41,21 @@ impl Backbone {
             open: HashMap::default(),
         }));
         let _ = tokio::spawn(Self::command_loop(inner.clone(), receiver));
-        Self { inner, sender }
+        Self {
+            inner,
+            sender,
+            backends: Vec::new(),
+        }
+    }
+
+    /// Registers a backend.
+    pub fn add_backend(&mut self, backend: Box<dyn Backend>) {
+        self.backends.push(backend)
+    }
+
+    /// Registers multiple backends.
+    pub fn add_backends<I: IntoIterator<Item = Box<dyn Backend>>>(&mut self, backends: I) {
+        self.backends.extend(backends.into_iter())
     }
 
     /// Creates a new file buffer, registers it and returns a writer to it.
@@ -128,12 +144,13 @@ impl Backbone {
         while let Some(command) = channel.recv().await {
             match command {
                 BackboneCommand::RemoveWriter(id) => {
-                    info!("Removing file {id} from bookkeeping");
+                    info!(file_id = %id, "Removing file {id} from bookkeeping");
                     let mut inner = inner.write().await;
                     inner.open.remove(&id);
                 }
-                BackboneCommand::ReadyForDistribution(id, _) => {
-                    info!("The file {id} was buffered completely and can now be distributed")
+                BackboneCommand::ReadyForDistribution(id, _summary) => {
+                    info!(file_id = %id, "The file {id} was buffered completely and can now be distributed")
+                    // TODO: Do something with the file now.
                 }
             }
         }
