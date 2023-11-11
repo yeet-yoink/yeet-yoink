@@ -62,9 +62,13 @@ async fn main() -> ExitCode {
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
     register_shutdown_handler(shutdown_tx.clone());
 
+    let backbone = Backbone::default();
+    // TODO: Create and register backends.
+
+    // The application state is shared with the Axum servers.
     let app_state = AppState {
         shutdown_tx: shutdown_tx.clone(),
-        backbone: Arc::new(Backbone::default()),
+        backbone: Arc::new(backbone),
     };
 
     let app = Router::new()
