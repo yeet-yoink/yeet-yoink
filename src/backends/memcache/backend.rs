@@ -1,10 +1,15 @@
 use crate::app_config::AppConfig;
+use crate::backbone::WriteSummary;
+use crate::backends::map_ok::MapOkIter;
 use crate::backends::memcache::{MemcacheBackendConfig, MemcacheConnectionString};
-use crate::backends::Backend;
+use crate::backends::{Backend, DistributionError, DynBackend, TryCreateFromConfig};
+use axum::async_trait;
 use memcache::Client;
 use r2d2::Pool;
 use r2d2_memcache::MemcacheConnectionManager;
+use shortguid::ShortGuid;
 use std::str::FromStr;
+use std::sync::Arc;
 
 pub struct MemcacheBackend {
     /// The tag identifying the backend.
@@ -29,6 +34,7 @@ impl MemcacheBackend {
     }
 }
 
+#[async_trait]
 impl Backend for MemcacheBackend {
     fn backend_info(&self) -> &str {
         "Memcached"
@@ -36,6 +42,14 @@ impl Backend for MemcacheBackend {
 
     fn tag(&self) -> &str {
         &self.tag
+    }
+
+    async fn distribute_file(
+        &self,
+        id: ShortGuid,
+        summary: Arc<WriteSummary>,
+    ) -> Result<(), DistributionError> {
+        todo!()
     }
 }
 
@@ -52,6 +66,24 @@ impl TryFrom<&AppConfig> for Vec<MemcacheBackend> {
             .memcache
             .iter()
             .map(MemcacheBackend::try_new)
+            .collect()
+    }
+}
+
+impl TryCreateFromConfig for MemcacheBackend {
+    type Error = MemcacheBackendConstructionError;
+
+    fn try_from_config(config: &AppConfig) -> Result<Vec<DynBackend>, Self::Error> {
+        let configs = &config.backends.memcache;
+        if configs.is_empty() {
+            return Ok(Vec::default());
+        }
+
+        configs
+            .iter()
+            .map(MemcacheBackend::try_new)
+            .map_ok(Box::new)
+            .map_ok(DynBackend::from)
             .collect()
     }
 }
