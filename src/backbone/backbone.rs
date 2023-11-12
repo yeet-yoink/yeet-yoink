@@ -4,7 +4,7 @@ use crate::backbone::file_writer::FileWriter;
 use crate::backbone::file_writer_guard::FileWriterGuard;
 use crate::backbone::WriteSummary;
 use crate::backends::{BackendCommand, BackendRegistry};
-use crate::CleanupRendezvous;
+use crate::shutdown_rendezvous::ShutdownRendezvousEvent;
 use async_tempfile::TempFile;
 use axum::headers::ContentType;
 use axum::response::{IntoResponse, Response};
@@ -41,7 +41,7 @@ struct Inner {
 impl Backbone {
     pub fn new(
         mut registry: BackendRegistry,
-        cleanup_rendezvous: Sender<CleanupRendezvous>,
+        cleanup_rendezvous: Sender<ShutdownRendezvousEvent>,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(1024);
         let inner = Arc::new(RwLock::new(Inner {
@@ -157,7 +157,7 @@ impl Backbone {
         inner: Arc<RwLock<Inner>>,
         mut channel: mpsc::Receiver<BackboneCommand>,
         backend_sender: Sender<BackendCommand>,
-        cleanup_rendezvous: Sender<CleanupRendezvous>,
+        cleanup_rendezvous: Sender<ShutdownRendezvousEvent>,
     ) {
         while let Some(command) = channel.recv().await {
             match command {
@@ -178,7 +178,7 @@ impl Backbone {
 
         info!("The backbone command loop stopped");
         cleanup_rendezvous
-            .send(CleanupRendezvous::Backbone)
+            .send(ShutdownRendezvousEvent::Backbone)
             .await
             .ok();
     }

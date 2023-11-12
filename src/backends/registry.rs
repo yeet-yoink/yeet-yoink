@@ -1,7 +1,7 @@
 use crate::app_config::AppConfig;
 use crate::backbone::WriteSummary;
 use crate::backends::DynBackend;
-use crate::CleanupRendezvous;
+use crate::shutdown_rendezvous::ShutdownRendezvousEvent;
 use shortguid::ShortGuid;
 use std::error::Error;
 use std::sync::Arc;
@@ -19,7 +19,7 @@ pub struct BackendRegistry {
 }
 
 impl BackendRegistry {
-    pub fn new(cleanup_rendezvous: Sender<CleanupRendezvous>) -> Self {
+    pub fn new(cleanup_rendezvous: Sender<ShutdownRendezvousEvent>) -> Self {
         let (sender, receiver) = mpsc::channel(EVENT_BUFFER_SIZE);
         let handle = tokio::spawn(Self::handle_events(receiver, cleanup_rendezvous));
         Self {
@@ -39,7 +39,7 @@ impl BackendRegistry {
 
     async fn handle_events(
         mut receiver: Receiver<BackendCommand>,
-        cleanup_rendezvous: Sender<CleanupRendezvous>,
+        cleanup_rendezvous: Sender<ShutdownRendezvousEvent>,
     ) {
         while let Some(event) = receiver.recv().await {
             match event {
@@ -53,7 +53,7 @@ impl BackendRegistry {
         // TODO: Wait until all currently running tasks have finished.
         debug!("Closing backend event loop");
         cleanup_rendezvous
-            .send(CleanupRendezvous::BackendRegistry)
+            .send(ShutdownRendezvousEvent::BackendRegistry)
             .await
             .ok();
     }
