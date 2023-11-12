@@ -1,14 +1,63 @@
 use crate::app_config::AppConfig;
+use crate::backbone::WriteSummary;
 use crate::backends::DynBackend;
+use crate::CleanupRendezvous;
+use shortguid::ShortGuid;
 use std::error::Error;
-use tracing::{error, info};
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::task::{JoinError, JoinHandle};
+use tracing::{debug, error, info};
 
-#[derive(Default)]
+const EVENT_BUFFER_SIZE: usize = 64;
+
 pub struct BackendRegistry {
     backends: Vec<DynBackend>,
+    handle: JoinHandle<()>,
+    sender: Option<Sender<BackendCommand>>,
 }
 
 impl BackendRegistry {
+    pub fn new(cleanup_rendezvous: Sender<CleanupRendezvous>) -> Self {
+        let (sender, receiver) = mpsc::channel(EVENT_BUFFER_SIZE);
+        let handle = tokio::spawn(Self::handle_events(receiver, cleanup_rendezvous));
+        Self {
+            backends: Vec::default(),
+            handle,
+            sender: Some(sender),
+        }
+    }
+
+    pub(crate) fn get_sender(&mut self) -> Option<Sender<BackendCommand>> {
+        self.sender.take()
+    }
+
+    pub async fn join(self) -> Result<(), JoinError> {
+        self.handle.await
+    }
+
+    async fn handle_events(
+        mut receiver: Receiver<BackendCommand>,
+        cleanup_rendezvous: Sender<CleanupRendezvous>,
+    ) {
+        while let Some(event) = receiver.recv().await {
+            match event {
+                BackendCommand::DistributeFile(id, _summary) => {
+                    // TODO: Handle file distribution
+                    debug!(file_id = %id, "Handling distribution of file {id}", id = id);
+                }
+            }
+        }
+
+        // TODO: Wait until all currently running tasks have finished.
+        debug!("Closing backend event loop");
+        cleanup_rendezvous
+            .send(CleanupRendezvous::BackendRegistry)
+            .await
+            .ok();
+    }
+
     /// Adds backends to the application.
     ///
     /// This function takes a type `T` that implements the `TryCreateFromConfig` trait, and a reference to an `AppConfig`.
@@ -98,4 +147,8 @@ where
 pub enum RegisterBackendError {
     #[error(transparent)]
     TryCreateFromConfig(Box<dyn Error>),
+}
+
+pub enum BackendCommand {
+    DistributeFile(ShortGuid, Arc<WriteSummary>),
 }

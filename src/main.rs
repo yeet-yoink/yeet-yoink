@@ -9,6 +9,7 @@ use crate::backends::memcache::MemcacheBackend;
 use crate::backends::{BackendRegistry, TryCreateFromConfig};
 use crate::handlers::*;
 use axum::Router;
+use clap::ArgMatches;
 use directories::ProjectDirs;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
@@ -16,10 +17,10 @@ use hyper::Server;
 use std::net::SocketAddr;
 use std::process::ExitCode;
 use std::sync::Arc;
-use tokio::sync::broadcast;
-use tokio::sync::broadcast::Sender;
+use tokio::sync::mpsc::Sender;
+use tokio::sync::{broadcast, mpsc};
 use tower::ServiceBuilder;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 mod app_config;
 mod backbone;
@@ -33,7 +34,7 @@ mod services;
 
 #[derive(Clone)]
 pub struct AppState {
-    shutdown_tx: Sender<()>,
+    shutdown_tx: broadcast::Sender<()>,
     backbone: Arc<Backbone>,
 }
 
@@ -64,8 +65,11 @@ async fn main() -> ExitCode {
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
     register_shutdown_handler(shutdown_tx.clone());
 
+    // Create a rendezvous channel to ensure all relevant tasks have been shut down.
+    let (rendezvous_tx, mut rendezvous_rx) = mpsc::channel(16);
+
     // TODO: Create and register backends.
-    let mut registry = BackendRegistry::default();
+    let mut registry = BackendRegistry::new(rendezvous_tx.clone());
 
     // TODO: This currently blocks if the Memcached instance is unavailable.
     //       We would prefer a solution where we can gracefully react to this in order to
@@ -76,13 +80,52 @@ async fn main() -> ExitCode {
         return ExitCode::FAILURE;
     };
 
-    let backbone = Backbone::default();
+    let backbone = Arc::new(Backbone::new(registry, rendezvous_tx.clone()));
 
     // The application state is shared with the Axum servers.
     let app_state = AppState {
         shutdown_tx: shutdown_tx.clone(),
-        backbone: Arc::new(backbone),
+        backbone: backbone.clone(),
     };
+
+    let exit_code = serve_requests(matches, app_state).await.err();
+
+    // If all servers are shut down, ensure the news is broadcast as well.
+    stop_all_servers(shutdown_tx, rendezvous_tx);
+
+    // TODO: Ensure registry is dropped, backbone is halted, ...
+    shut_down_backbone(backbone);
+    rendezvous_workers(rendezvous_rx).await;
+
+    info!("Bye. 👋");
+    exit_code.unwrap_or(ExitCode::SUCCESS)
+}
+
+fn shut_down_backbone(backbone: Arc<Backbone>) {
+    assert_eq!(Arc::strong_count(&backbone), 1);
+}
+
+async fn rendezvous_workers(mut rendezvous_rx: mpsc::Receiver<CleanupRendezvous>) {
+    // Wait for all services to shut down.
+    while let Some(event) = rendezvous_rx.recv().await {
+        match event {
+            CleanupRendezvous::BackendRegistry => debug!("Backend registry worker thread finished"),
+            CleanupRendezvous::Backbone => debug!("Backbone worker thread finished"),
+        }
+    }
+    info!("Shutdown rendezvous completed");
+}
+
+fn stop_all_servers(shutdown_tx: broadcast::Sender<()>, rendezvous_tx: Sender<CleanupRendezvous>) {
+    // We take ownership of this channel so that it'll be closed after.
+    shutdown_tx.send(()).ok();
+
+    // We take ownership to ensure the rendezvous channel is closed.
+    let _ = rendezvous_tx;
+}
+
+async fn serve_requests(matches: ArgMatches, app_state: AppState) -> Result<(), ExitCode> {
+    let shutdown_tx = app_state.shutdown_tx.clone();
 
     let app = Router::new()
         .map_metrics_endpoint()
@@ -119,7 +162,9 @@ async fn main() -> ExitCode {
 
                 // No servers are currently running since no await was called on any
                 // of them yet. Therefore, exiting here is "graceful".
-                return ExitCode::from(exitcode::NOPERM as u8);
+
+                // TODO: Ensure registry is dropped, backbone is halted, ....
+                return Err(ExitCode::from(exitcode::NOPERM as u8));
             }
         };
 
@@ -136,7 +181,9 @@ async fn main() -> ExitCode {
     let mut exit_code = None;
     while let Some(result) = servers.next().await {
         match result {
-            Ok(()) => {}
+            Ok(()) => {
+                debug!("A server stopped")
+            }
             Err(e) => {
                 error!("Server error: {}", e);
 
@@ -152,18 +199,22 @@ async fn main() -> ExitCode {
         shutdown_tx.send(()).ok();
     }
 
-    if let Some(error_code) = exit_code {
-        return error_code;
+    if let Some(exit_code) = exit_code {
+        Err(exit_code)
+    } else {
+        Ok(())
     }
-
-    info!("Bye. 👋");
-    ExitCode::SUCCESS
 }
 
-fn register_shutdown_handler(shutdown_tx: Sender<()>) {
+fn register_shutdown_handler(shutdown_tx: broadcast::Sender<()>) {
     ctrlc::set_handler(move || {
         warn!("Initiating shutdown from OS");
         shutdown_tx.send(()).ok();
     })
     .expect("Error setting process termination handler");
+}
+
+pub enum CleanupRendezvous {
+    BackendRegistry,
+    Backbone,
 }
