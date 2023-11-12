@@ -1,6 +1,7 @@
 use crate::app_config::AppConfig;
 use crate::backbone::WriteSummary;
 use crate::backends::memcache::{MemcacheBackendConfig, MemcacheConnectionString};
+use crate::backends::registry::BackendInfo;
 use crate::backends::{
     Backend, BoxOkIter, DistributionError, DynBackend, MapOkIter, TryCreateFromConfig,
 };
@@ -37,10 +38,6 @@ impl MemcacheBackend {
 
 #[async_trait]
 impl Backend for MemcacheBackend {
-    fn backend_info(&self) -> &str {
-        "Memcached"
-    }
-
     fn tag(&self) -> &str {
         &self.tag
     }
@@ -51,6 +48,16 @@ impl Backend for MemcacheBackend {
         summary: Arc<WriteSummary>,
     ) -> Result<(), DistributionError> {
         todo!()
+    }
+}
+
+impl BackendInfo for MemcacheBackend {
+    fn backend_name() -> &'static str {
+        "Memcached"
+    }
+
+    fn backend_version() -> &'static str {
+        env!("CARGO_PKG_VERSION")
     }
 }
 

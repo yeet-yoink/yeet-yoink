@@ -6,7 +6,7 @@
 use crate::app_config::{load_config, AppConfig};
 use crate::backbone::Backbone;
 use crate::backends::memcache::MemcacheBackend;
-use crate::backends::{BackendRegistry, DynBackend, TryCreateFromConfig};
+use crate::backends::BackendRegistry;
 use crate::handlers::*;
 use axum::Router;
 use directories::ProjectDirs;
@@ -55,7 +55,7 @@ async fn main() -> ExitCode {
 
     let cfg: AppConfig = match load_config(dirs.config_local_dir(), &matches) {
         Ok(config) => config,
-        Err(e) => {
+        Err(_) => {
             return ExitCode::FAILURE;
         }
     };
@@ -68,21 +68,12 @@ async fn main() -> ExitCode {
     let mut registry = BackendRegistry::default();
     #[cfg(feature = "memcache")]
     {
-        match MemcacheBackend::try_from_config(&cfg) {
-            Ok(backends) => {
-                if !backends.is_empty() {
-                    info!(
-                        "Registering {count} Memcached backend{plural}",
-                        count = backends.len(),
-                        plural = if backends.len() == 1 { "" } else { "s" }
-                    );
-                    registry.add_backends_from_iter(backends);
-                }
-            }
-            Err(e) => {
-                error!("Failed to initialize Memcached backends: {}", e);
-                return ExitCode::FAILURE;
-            }
+        // TODO: This currently blocks if the Memcached instance is unavailable.
+        //       We would prefer a solution where we can gracefully react to this in order to
+        //       avoid having the service fail at runtime if Memcached becomes unresponsive.
+        if let Err(e) = registry.add_backends::<MemcacheBackend>(&cfg) {
+            error!("Failed to initialize Memcached backends: {}", e);
+            return ExitCode::FAILURE;
         };
     }
 

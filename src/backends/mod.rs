@@ -1,6 +1,6 @@
 use crate::backbone::WriteSummary;
 pub use crate::backends::dyn_backend::DynBackend;
-pub use crate::backends::map_ok::{BoxOkIter, MapOk, MapOkIter};
+pub use crate::backends::map_ok::{BoxOkIter, MapOkIter};
 pub use crate::backends::registry::BackendRegistry;
 pub use crate::backends::registry::TryCreateFromConfig;
 use axum::async_trait;
@@ -17,9 +17,6 @@ mod registry;
 
 #[async_trait]
 pub trait Backend: Send + Sync {
-    /// Gets an informational string about the backend.
-    fn backend_info(&self) -> &str;
-
     /// Gets the tag of the backend.
     fn tag(&self) -> &str;
 
