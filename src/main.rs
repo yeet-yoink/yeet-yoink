@@ -18,8 +18,7 @@ use hyper::Server;
 use std::net::SocketAddr;
 use std::process::ExitCode;
 use std::sync::Arc;
-use tokio::sync::mpsc::Sender;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::broadcast;
 use tower::ServiceBuilder;
 use tracing::{debug, error, info, warn};
 
@@ -71,18 +70,18 @@ async fn main() -> ExitCode {
     let rendezvous = ShutdownRendezvous::new();
 
     // TODO: Create and register backends.
-    let mut registry = BackendRegistry::new(rendezvous.get_trigger());
+    let registry = BackendRegistry::builder(rendezvous.get_trigger());
 
     // TODO: This currently blocks if the Memcached instance is unavailable.
     //       We would prefer a solution where we can gracefully react to this in order to
     //       avoid having the service fail at runtime if Memcached becomes unresponsive.
     #[cfg(feature = "memcache")]
-    if let Err(e) = MemcacheBackend::register(&mut registry, &cfg) {
-        error!("Failed to initialize Memcached backends: {}", e);
-        return ExitCode::FAILURE;
+    let registry = match registry.add_backends::<MemcacheBackend>(&cfg) {
+        Ok(registry) => registry,
+        Err(_) => return ExitCode::FAILURE,
     };
 
-    let backbone = Arc::new(Backbone::new(registry, rendezvous.get_trigger()));
+    let backbone = Arc::new(Backbone::new(registry.build(), rendezvous.get_trigger()));
 
     // The application state is shared with the Axum servers.
     let app_state = AppState {

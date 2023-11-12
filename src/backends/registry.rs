@@ -1,6 +1,6 @@
 use crate::app_config::AppConfig;
 use crate::backbone::WriteSummary;
-use crate::backends::DynBackend;
+use crate::backends::{DistributionError, DynBackend};
 use crate::shutdown_rendezvous::ShutdownRendezvousEvent;
 use shortguid::ShortGuid;
 use std::error::Error;
@@ -8,22 +8,24 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::{JoinError, JoinHandle};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 const EVENT_BUFFER_SIZE: usize = 64;
 
 pub struct BackendRegistry {
-    backends: Vec<DynBackend>,
     handle: JoinHandle<()>,
     sender: Option<Sender<BackendCommand>>,
 }
 
 impl BackendRegistry {
-    pub fn new(cleanup_rendezvous: Sender<ShutdownRendezvousEvent>) -> Self {
+    pub fn builder(cleanup_rendezvous: Sender<ShutdownRendezvousEvent>) -> BackendRegistryBuilder {
+        BackendRegistryBuilder::new(cleanup_rendezvous)
+    }
+
+    fn new(cleanup_rendezvous: Sender<ShutdownRendezvousEvent>, backends: Vec<DynBackend>) -> Self {
         let (sender, receiver) = mpsc::channel(EVENT_BUFFER_SIZE);
-        let handle = tokio::spawn(Self::handle_events(receiver, cleanup_rendezvous));
+        let handle = tokio::spawn(Self::handle_events(backends, receiver, cleanup_rendezvous));
         Self {
-            backends: Vec::default(),
             handle,
             sender: Some(sender),
         }
@@ -38,14 +40,27 @@ impl BackendRegistry {
     }
 
     async fn handle_events(
+        backends: Vec<DynBackend>,
         mut receiver: Receiver<BackendCommand>,
         cleanup_rendezvous: Sender<ShutdownRendezvousEvent>,
     ) {
         while let Some(event) = receiver.recv().await {
             match event {
-                BackendCommand::DistributeFile(id, _summary) => {
+                BackendCommand::DistributeFile(id, summary) => {
                     // TODO: Handle file distribution
                     debug!(file_id = %id, "Handling distribution of file {id}", id = id);
+
+                    // TODO: Spawn distribution tasks in background
+
+                    // TODO: Initiate tasks in priority order?
+                    for backend in &backends {
+                        match backend.distribute_file(id, summary.clone()).await {
+                            Ok(_) => {}
+                            Err(e) => {
+                                warn!(file_id = %id, "Failed to distribute file using backend {tag}: {error}", tag = backend.tag(), error = e);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -56,6 +71,24 @@ impl BackendRegistry {
             .send(ShutdownRendezvousEvent::BackendRegistry)
             .await
             .ok();
+    }
+}
+
+pub struct BackendRegistryBuilder {
+    backends: Vec<DynBackend>,
+    pub cleanup_rendezvous: Sender<ShutdownRendezvousEvent>,
+}
+
+impl BackendRegistryBuilder {
+    fn new(cleanup_rendezvous: Sender<ShutdownRendezvousEvent>) -> Self {
+        Self {
+            backends: Vec::default(),
+            cleanup_rendezvous,
+        }
+    }
+
+    pub fn build(self) -> BackendRegistry {
+        BackendRegistry::new(self.cleanup_rendezvous, self.backends)
     }
 
     /// Adds backends to the application.
@@ -89,28 +122,44 @@ impl BackendRegistry {
     ///     Err(error) => eprintln!("Failed to add backends: {}", error),
     /// };
     /// ```
-    pub fn add_backends<T>(&mut self, config: &AppConfig) -> Result<(), RegisterBackendError>
+    pub fn add_backends<T>(
+        mut self,
+        config: &AppConfig,
+    ) -> Result<BackendRegistryBuilder, RegisterBackendError>
     where
         T: TryCreateFromConfig,
     {
-        let backends = T::try_from_config(config)
-            .map_err(|e| RegisterBackendError::TryCreateFromConfig(Box::new(e)))?;
-        if !backends.is_empty() {
-            info!(
+        match T::try_from_config(config)
+            .map_err(|e| RegisterBackendError::TryCreateFromConfig(Box::new(e)))
+        {
+            Ok(backends) => {
+                if !backends.is_empty() {
+                    info!(
                 "Registering {count} {backend} backend{plural} (backend version {backend_version})",
                 count = backends.len(),
                 backend = T::backend_name(),
                 backend_version = T::backend_version(),
                 plural = if backends.len() == 1 { "" } else { "s" }
             );
-            self.add_backends_from_iter(backends);
+                    Ok(self.add_backends_from_iter(backends))
+                } else {
+                    Ok(self)
+                }
+            }
+            Err(e) => {
+                error!("Failed to initialize Memcached backends: {}", e);
+                Err(e)
+            }
         }
-        Ok(())
     }
 
     /// Registers multiple backends.
-    fn add_backends_from_iter<I: IntoIterator<Item = DynBackend>>(&mut self, backends: I) {
-        self.backends.extend(backends.into_iter())
+    fn add_backends_from_iter<I: IntoIterator<Item = DynBackend>>(
+        mut self,
+        backends: I,
+    ) -> BackendRegistryBuilder {
+        self.backends.extend(backends.into_iter());
+        self
     }
 }
 
@@ -133,9 +182,9 @@ where
     fn try_from_config(config: &AppConfig) -> Result<Vec<DynBackend>, Self::Error>;
 
     fn register(
-        registry: &mut BackendRegistry,
+        registry: BackendRegistryBuilder,
         config: &AppConfig,
-    ) -> Result<(), RegisterBackendError>
+    ) -> Result<BackendRegistryBuilder, RegisterBackendError>
     where
         Self: Sized,
     {
