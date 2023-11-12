@@ -128,6 +128,10 @@ impl FileRecord {
             return;
         }
 
+        // TODO: The lifetime handler also needs to listen to graceful shutdowns.
+        //       If that's not the case, open file entries may keep the server
+        //       alive even if the servers have already shut down.
+
         // Keep the file open for readers.
         Self::apply_temporal_lease(&id, duration).await;
         info!(file_id = %id, "Read lease timed out for file {id}; removing it");
