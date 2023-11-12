@@ -82,6 +82,16 @@ where
     type Error;
 
     fn try_from_config(config: &AppConfig) -> Result<Vec<DynBackend>, Self::Error>;
+
+    fn register(
+        registry: &mut BackendRegistry,
+        config: &AppConfig,
+    ) -> Result<(), RegisterBackendError>
+    where
+        Self: Sized,
+    {
+        registry.add_backends::<Self>(&config)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
