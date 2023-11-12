@@ -112,6 +112,28 @@ where
     }
 }
 
+/// Represents an iterator that boxes the Ok values.
+///
+/// This trait is implemented for iterators over `Result<T, E>`, allowing them to box
+/// the Ok values using the `Box<T>` type.
+///
+/// # Implementations
+///
+/// Implementations of this trait must provide an implementation for the `box_ok` function, which
+/// returns a `MapOk` iterator that boxes each Ok value encountered during iteration.
+pub trait BoxOkIter<T, E>: Sized {
+    fn box_ok(self) -> MapOk<Self, T, E, Box<T>, fn(T) -> Box<T>>;
+}
+
+impl<I, T, E> BoxOkIter<T, E> for I
+where
+    I: Iterator<Item = Result<T, E>>,
+{
+    fn box_ok(self) -> MapOk<Self, T, E, Box<T>, fn(T) -> Box<T>> {
+        self.map_ok(Box::new)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

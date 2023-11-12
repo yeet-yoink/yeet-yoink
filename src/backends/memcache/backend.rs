@@ -1,8 +1,9 @@
 use crate::app_config::AppConfig;
 use crate::backbone::WriteSummary;
-use crate::backends::map_ok::MapOkIter;
 use crate::backends::memcache::{MemcacheBackendConfig, MemcacheConnectionString};
-use crate::backends::{Backend, DistributionError, DynBackend, TryCreateFromConfig};
+use crate::backends::{
+    Backend, BoxOkIter, DistributionError, DynBackend, MapOkIter, TryCreateFromConfig,
+};
 use axum::async_trait;
 use memcache::Client;
 use r2d2::Pool;
@@ -53,23 +54,6 @@ impl Backend for MemcacheBackend {
     }
 }
 
-impl TryFrom<&AppConfig> for Vec<MemcacheBackend> {
-    type Error = MemcacheBackendConstructionError;
-
-    fn try_from(value: &AppConfig) -> Result<Self, Self::Error> {
-        if value.backends.memcache.is_empty() {
-            return Ok(Vec::default());
-        }
-
-        value
-            .backends
-            .memcache
-            .iter()
-            .map(MemcacheBackend::try_new)
-            .collect()
-    }
-}
-
 impl TryCreateFromConfig for MemcacheBackend {
     type Error = MemcacheBackendConstructionError;
 
@@ -82,7 +66,7 @@ impl TryCreateFromConfig for MemcacheBackend {
         configs
             .iter()
             .map(MemcacheBackend::try_new)
-            .map_ok(Box::new)
+            .box_ok()
             .map_ok(DynBackend::from)
             .collect()
     }
