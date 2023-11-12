@@ -5,7 +5,7 @@
 
 use crate::app_config::{load_config, AppConfig};
 use crate::backbone::Backbone;
-use crate::backends::Backend;
+use crate::backends::{Backend, BackendRegistry, DynBackend};
 use crate::handlers::*;
 use axum::Router;
 use directories::ProjectDirs;
@@ -63,8 +63,8 @@ async fn main() -> ExitCode {
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
     register_shutdown_handler(shutdown_tx.clone());
 
-    let mut backbone = Backbone::default();
     // TODO: Create and register backends.
+    let mut registry = BackendRegistry::default();
     #[cfg(feature = "memcache")]
     {
         match Vec::<backends::memcache::MemcacheBackend>::try_from(&cfg) {
@@ -75,11 +75,8 @@ async fn main() -> ExitCode {
                         count = backends.len(),
                         plural = if backends.len() == 1 { "" } else { "s" }
                     );
-                    backbone.add_backends(
-                        backends
-                            .into_iter()
-                            .map(Box::new)
-                            .map(|b| b as Box<dyn Backend>),
+                    registry.add_backends_from_iter(
+                        backends.into_iter().map(Box::new).map(DynBackend::from),
                     );
                 }
             }
@@ -89,6 +86,8 @@ async fn main() -> ExitCode {
             }
         };
     }
+
+    let mut backbone = Backbone::default();
 
     // The application state is shared with the Axum servers.
     let app_state = AppState {

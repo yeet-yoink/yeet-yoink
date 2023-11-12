@@ -1,5 +1,6 @@
 use memcache::Url;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
 /// A Memcached connection string.
@@ -19,10 +20,6 @@ impl MemcacheConnectionString {
             }
             Err(_) => Err(MemcacheConnectionStringError::InvalidFormat),
         }
-    }
-
-    fn into_inner(self) -> String {
-        self.0
     }
 
     fn get_urls(self) -> Vec<String> {
@@ -91,6 +88,12 @@ impl r2d2_memcache::memcache::Connectable for &MemcacheConnectionString {
     }
 }
 
+impl Display for MemcacheConnectionString {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -104,12 +107,12 @@ mod tests {
         let invalid_result: Result<MemcacheConnectionString, _> = invalid_conn_str.parse();
 
         match valid_result {
-            Ok(conn_str) => println!("Valid connection string: {}", conn_str.into_inner()),
+            Ok(conn_str) => println!("Valid connection string: {}", conn_str),
             Err(err) => println!("Error parsing connection string: {}", err),
         }
 
         match invalid_result {
-            Ok(conn_str) => println!("Valid connection string: {}", conn_str.into_inner()),
+            Ok(conn_str) => println!("Valid connection string: {}", conn_str),
             Err(err) => println!("Error parsing connection string: {}", err),
         }
     }
