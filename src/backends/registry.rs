@@ -120,7 +120,7 @@ impl BackendRegistryBuilder {
     /// };
     /// ```
     pub fn add_backends<T>(
-        mut self,
+        self,
         config: &AppConfig,
     ) -> Result<BackendRegistryBuilder, RegisterBackendError>
     where
