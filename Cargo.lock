@@ -1559,6 +1559,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "436b050e76ed2903236f032a59761c1eb99e1b0aead2c257922771dab1fc8c78"
 
 [[package]]
+name = "rendezvous"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc1df53263c8b5b73813dc6035e32e751b391e6e6f7a80c68cd007afbd55bd78"
+dependencies = [
+ "log",
+ "tokio",
+]
+
+[[package]]
 name = "reqwest"
 version = "0.11.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2476,6 +2486,7 @@ dependencies = [
  "prometheus-client",
  "r2d2",
  "r2d2-memcache",
+ "rendezvous",
  "serde",
  "serde_yaml",
  "sha2",

@@ -1,7 +1,7 @@
 use crate::app_config::AppConfig;
 use crate::backbone::WriteSummary;
 use crate::backends::{DistributionError, DynBackend};
-use crate::shutdown_rendezvous::ShutdownRendezvousEvent;
+use rendezvous::RendezvousGuard;
 use shortguid::ShortGuid;
 use std::error::Error;
 use std::sync::Arc;
@@ -18,11 +18,11 @@ pub struct BackendRegistry {
 }
 
 impl BackendRegistry {
-    pub fn builder(cleanup_rendezvous: Sender<ShutdownRendezvousEvent>) -> BackendRegistryBuilder {
+    pub fn builder(cleanup_rendezvous: RendezvousGuard) -> BackendRegistryBuilder {
         BackendRegistryBuilder::new(cleanup_rendezvous)
     }
 
-    fn new(cleanup_rendezvous: Sender<ShutdownRendezvousEvent>, backends: Vec<DynBackend>) -> Self {
+    fn new(cleanup_rendezvous: RendezvousGuard, backends: Vec<DynBackend>) -> Self {
         let (sender, receiver) = mpsc::channel(EVENT_BUFFER_SIZE);
         let handle = tokio::spawn(Self::handle_events(backends, receiver, cleanup_rendezvous));
         Self {
@@ -42,7 +42,7 @@ impl BackendRegistry {
     async fn handle_events(
         backends: Vec<DynBackend>,
         mut receiver: Receiver<BackendCommand>,
-        cleanup_rendezvous: Sender<ShutdownRendezvousEvent>,
+        cleanup_rendezvous: RendezvousGuard,
     ) {
         while let Some(event) = receiver.recv().await {
             match event {
@@ -67,20 +67,17 @@ impl BackendRegistry {
 
         // TODO: Wait until all currently running tasks have finished.
         debug!("Closing backend event loop");
-        cleanup_rendezvous
-            .send(ShutdownRendezvousEvent::BackendRegistry)
-            .await
-            .ok();
+        cleanup_rendezvous.completed();
     }
 }
 
 pub struct BackendRegistryBuilder {
     backends: Vec<DynBackend>,
-    pub cleanup_rendezvous: Sender<ShutdownRendezvousEvent>,
+    pub cleanup_rendezvous: RendezvousGuard,
 }
 
 impl BackendRegistryBuilder {
-    fn new(cleanup_rendezvous: Sender<ShutdownRendezvousEvent>) -> Self {
+    fn new(cleanup_rendezvous: RendezvousGuard) -> Self {
         Self {
             backends: Vec::default(),
             cleanup_rendezvous,

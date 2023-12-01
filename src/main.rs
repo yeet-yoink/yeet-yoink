@@ -8,13 +8,13 @@ use crate::backbone::Backbone;
 use crate::backends::memcache::MemcacheBackend;
 use crate::backends::{BackendRegistry, TryCreateFromConfig};
 use crate::handlers::*;
-use crate::shutdown_rendezvous::ShutdownRendezvous;
 use axum::Router;
 use clap::ArgMatches;
 use directories::ProjectDirs;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use hyper::Server;
+use rendezvous::Rendezvous;
 use std::net::SocketAddr;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -31,7 +31,6 @@ mod health;
 mod logging;
 mod metrics;
 mod services;
-mod shutdown_rendezvous;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -67,10 +66,10 @@ async fn main() -> ExitCode {
     register_shutdown_handler(shutdown_tx.clone());
 
     // Create a rendezvous channel to ensure all relevant tasks have been shut down.
-    let rendezvous = ShutdownRendezvous::new();
+    let rendezvous = Rendezvous::new();
 
     // TODO: Create and register backends.
-    let registry = BackendRegistry::builder(rendezvous.get_trigger());
+    let registry = BackendRegistry::builder(rendezvous.fork_guard());
 
     // TODO: This currently blocks if the Memcached instance is unavailable.
     //       We would prefer a solution where we can gracefully react to this in order to
@@ -81,7 +80,7 @@ async fn main() -> ExitCode {
         Err(_) => return ExitCode::FAILURE,
     };
 
-    let backbone = Arc::new(Backbone::new(registry.build(), rendezvous.get_trigger()));
+    let backbone = Arc::new(Backbone::new(registry.build(), rendezvous.fork_guard()));
 
     // The application state is shared with the Axum servers.
     let app_state = AppState {
@@ -96,7 +95,7 @@ async fn main() -> ExitCode {
 
     // TODO: Ensure registry is dropped, backbone is halted, ...
     shut_down_backbone(backbone);
-    rendezvous.rendezvous().await;
+    rendezvous.rendezvous_async().await.ok();
 
     info!("Bye. 👋");
     exit_code.unwrap_or(ExitCode::SUCCESS)
