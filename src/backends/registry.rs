@@ -1,6 +1,6 @@
 use crate::app_config::AppConfig;
 use crate::backbone::WriteSummary;
-use crate::backends::{DistributionError, DynBackend};
+use crate::backends::DynBackend;
 use rendezvous::RendezvousGuard;
 use shortguid::ShortGuid;
 use std::error::Error;

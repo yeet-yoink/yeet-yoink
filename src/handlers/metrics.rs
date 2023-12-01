@@ -1,7 +1,6 @@
 //! Contains the `/metrics` endpoint filter.
 
 use crate::metrics::Metrics;
-use axum::body::HttpBody;
 use axum::routing::get;
 use axum::Router;
 
@@ -14,10 +13,9 @@ pub trait MetricsRoutes {
     fn map_metrics_endpoint(self) -> Self;
 }
 
-impl<S, B> MetricsRoutes for Router<S, B>
+impl<S> MetricsRoutes for Router<S>
 where
     S: Clone + Send + Sync + 'static,
-    B: HttpBody + Send + 'static,
 {
     // Ensure HttpCallMetricTracker is updated.
     fn map_metrics_endpoint(self) -> Self {

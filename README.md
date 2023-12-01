@@ -92,3 +92,10 @@ sequenceDiagram
 ```shell
 cargo run --bin yeet-yoink -- --http 127.0.0.1:8080 --http 127.0.1.1:8081 -c example-config.yaml
 ```
+
+Testing binary uploads with curl, ensure to use the `--data-binary` argument instead of `--data`, as zero bytes
+may otherwise prematurely end the transfer:
+
+```shell
+curl --verbose -XPOST http://localhost:8080/yeet --data-binary @big-file.jpg
+```

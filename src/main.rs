@@ -6,18 +6,19 @@
 use crate::app_config::{load_config, AppConfig};
 use crate::backbone::Backbone;
 use crate::backends::memcache::MemcacheBackend;
-use crate::backends::{BackendRegistry, TryCreateFromConfig};
+use crate::backends::BackendRegistry;
 use crate::handlers::*;
 use axum::Router;
 use clap::ArgMatches;
 use directories::ProjectDirs;
-use futures::stream::FuturesUnordered;
-use futures::StreamExt;
-use hyper::Server;
+use futures_util::stream::FuturesUnordered;
+use futures_util::StreamExt;
 use rendezvous::Rendezvous;
+use std::future::IntoFuture;
 use std::net::SocketAddr;
 use std::process::ExitCode;
 use std::sync::Arc;
+use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 use tower::ServiceBuilder;
 use tracing::{debug, error, info, warn};
@@ -138,10 +139,10 @@ async fn serve_requests(matches: ArgMatches, app_state: AppState) -> Result<(), 
     for addr in http_sockets {
         let mut shutdown_rx = shutdown_tx.subscribe();
 
-        let builder = match Server::try_bind(&addr) {
-            Ok(builder) => {
+        let listener = match TcpListener::bind(&addr).await {
+            Ok(listener) => {
                 info!("Now listening on http://{addr}", addr = addr);
-                builder
+                listener
             }
             Err(e) => {
                 error!("Unable to bind to {addr}: {error}", addr = addr, error = e);
@@ -154,11 +155,8 @@ async fn serve_requests(matches: ArgMatches, app_state: AppState) -> Result<(), 
             }
         };
 
-        let server = builder
-            .serve(service_builder.clone())
-            .with_graceful_shutdown(async move {
-                shutdown_rx.recv().await.ok();
-            });
+        // TODO: Add graceful shutdown via `shutdown_rx.recv().await.ok()`
+        let server = axum::serve(listener, service_builder.clone()).into_future();
 
         servers.push(server);
     }

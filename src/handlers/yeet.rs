@@ -5,13 +5,14 @@ use crate::expiration_as_rfc1123;
 use crate::metrics::transfer::TransferMethod;
 use crate::metrics::transfer::TransferMetrics;
 use crate::AppState;
-use axum::body::HttpBody;
-use axum::extract::{BodyStream, Query, State, TypedHeader};
-use axum::headers::{ContentLength, ContentType};
+use axum::body::Body;
+use axum::extract::{Query, State};
 use axum::http::{HeaderName, HeaderValue};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::Router;
+use axum_extra::TypedHeader;
+use headers::{ContentLength, ContentType};
 use headers_content_md5::ContentMd5;
 use hyper::body::Buf;
 use hyper::header::EXPIRES;
@@ -36,12 +37,7 @@ pub trait YeetRoutes {
     fn map_yeet_endpoint(self) -> Self;
 }
 
-impl<B> YeetRoutes for Router<AppState, B>
-where
-    B: HttpBody + Send + Sync + 'static,
-    axum::body::Bytes: From<<B as HttpBody>::Data>,
-    <B as HttpBody>::Error: std::error::Error + Send + Sync,
-{
+impl YeetRoutes for Router<AppState> {
     // Ensure HttpCallMetricTracker is updated.
     fn map_yeet_endpoint(self) -> Self {
         self.route("/yeet", post(do_yeet))
@@ -60,7 +56,7 @@ async fn do_yeet(
     content_md5: Option<TypedHeader<ContentMd5>>,
     State(state): State<AppState>,
     query: Query<QueryParams>,
-    stream: BodyStream,
+    body: Body,
 ) -> Result<Response, StatusCode> {
     TransferMetrics::track_transfer(TransferMethod::Store);
 
@@ -104,7 +100,7 @@ async fn do_yeet(
         Err(e) => return Ok(e.into()),
     };
 
-    let mut stream = Box::pin(stream);
+    let mut stream = body.into_data_stream();
 
     let mut bytes_written = 0;
     while let Some(result) = stream.next().await {

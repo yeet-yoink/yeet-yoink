@@ -1,19 +1,16 @@
-use hyper::service::Service;
 use hyper::{Request, StatusCode, Version};
 use pin_project::pin_project;
 
 use crate::metrics::http::HttpMetrics;
-use axum::body::BoxBody;
-use axum::http::Response;
-use axum::response::IntoResponse;
-use hyper::body::HttpBody;
+use axum::body::HttpBody;
+use axum::response::{IntoResponse, Response};
 use std::cell::Cell;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::time::Instant;
-use tower::Layer;
+use tower::{Layer, Service};
 use tracing::debug;
 
 /// A middleware for call metrics. Uses [`HttpMetrics`].
@@ -47,7 +44,7 @@ where
     S::Response: IntoResponse,
     B: HttpBody,
 {
-    type Response = Response<BoxBody>;
+    type Response = Response;
     type Error = S::Error;
     type Future = HttpCallMetricsFuture<S::Future>;
 
@@ -93,7 +90,7 @@ where
     F: Future<Output = Result<R, E>>,
     R: IntoResponse,
 {
-    type Output = Result<Response<BoxBody>, E>;
+    type Output = Result<Response, E>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // Note that this method will be called at least twice.

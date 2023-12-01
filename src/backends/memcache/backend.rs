@@ -47,7 +47,8 @@ impl Backend for MemcacheBackend {
         id: ShortGuid,
         summary: Arc<WriteSummary>,
     ) -> Result<(), DistributionError> {
-        todo!()
+        // todo!()
+        Ok(())
     }
 }
 

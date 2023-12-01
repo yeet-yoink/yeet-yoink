@@ -1,7 +1,6 @@
 //! Contains the `/health` endpoint filter.
 
 use crate::health::HealthState;
-use axum::body::HttpBody;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, MethodRouter};
 use axum::Router;
@@ -56,10 +55,9 @@ pub trait HealthRoutes {
     fn map_health_endpoints(self) -> Self;
 }
 
-impl<S, B> HealthRoutes for Router<S, B>
+impl<S> HealthRoutes for Router<S>
 where
     S: Clone + Send + Sync + 'static,
-    B: HttpBody + Send + 'static,
 {
     fn map_health_endpoints(self) -> Self {
         // Ensure HttpCallMetricTracker is updated.
@@ -82,10 +80,9 @@ where
 /// ## Arguments
 /// * `path` - The path on which to host the handler, e.g. `health`, `readyz`, etc.
 /// * `checks` - The type of health check to run on that path.
-fn health_endpoint<S, B>(checks: HealthCheck) -> MethodRouter<S, B, Infallible>
+fn health_endpoint<S>(checks: HealthCheck) -> MethodRouter<S, Infallible>
 where
     S: Clone + Send + Sync + 'static,
-    B: HttpBody + Send + 'static,
 {
     get(move || handle_health(checks))
 }
