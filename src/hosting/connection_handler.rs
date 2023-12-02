@@ -133,18 +133,21 @@ async fn handle_connection(
     //
     // `TokioExecutor` tells hyper to use `tokio::spawn` to spawn tasks.
     let builder = server::conn::auto::Builder::new(TokioExecutor::new());
+    let serve = builder.serve_connection_with_upgrades(tcp_stream, hyper_service);
+
     select! {
         biased;
 
-        // TODO: This is not graceful.
         _ = stopping_rx.recv() => {
             // this will stop handling the connection when the shutdown signal is received,
             // and jump to executing the next block of code after select.
             trace!("Shutdown signal received, stopping connection handling");
+
+            // TODO: Keep polling serve until the number of in-flight connections is zero, then exit.
         },
         // `serve_connection_with_upgrades` is required for websockets. If you don't need
         // that you can use `serve_connection` instead.
-        result = builder.serve_connection_with_upgrades(tcp_stream, hyper_service) => {
+        result = serve => {
             if let Err(err) = result {
                 // This error only appears when the client doesn't send a request and
                 // terminate the connection.
