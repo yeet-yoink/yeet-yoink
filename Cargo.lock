@@ -1671,9 +1671,9 @@ checksum = "c08c74e62047bb2de4ff487b251e4a92e24f48745648451635cec7d591162d9f"
 
 [[package]]
 name = "rendezvous"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc1df53263c8b5b73813dc6035e32e751b391e6e6f7a80c68cd007afbd55bd78"
+checksum = "130b9b13db349fd6f744037ff2389578e49e4e2e539a9df557e681d58d08309e"
 dependencies = [
  "log",
  "tokio",

@@ -99,3 +99,9 @@ may otherwise prematurely end the transfer:
 ```shell
 curl --verbose -XPOST http://localhost:8080/yeet --data-binary @big-file.jpg
 ```
+
+With nghttp, it could look like
+
+```shell
+nghttp -v --data=big-file.jpg -H':method: POST' http://localhost:8080/yeet
+```
