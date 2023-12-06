@@ -1,6 +1,6 @@
 use crate::backbone::file_hashes::FileHashes;
 use crate::backbone::hash::{HashMd5, HashSha256};
-use shared_files::{CompleteWritingError, SharedTemporaryFileWriter};
+use shared_files::{prelude::*, SharedTemporaryFileWriter};
 use shortguid::ShortGuid;
 use std::io::{Error, ErrorKind};
 use std::sync::Arc;

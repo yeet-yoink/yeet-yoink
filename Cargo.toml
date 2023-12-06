@@ -12,7 +12,7 @@ rust-version = "1.68.0"
 
 [dependencies]
 anyhow = "1.0.71"
-async-tempfile = "0.4.0"
+async-tempfile = "0.5.0"
 axum = { version = "0.6.18", features = ["http2", "headers", "macros", "json"] }
 base64 = "0.21.2"
 chrono = "0.4.26"
@@ -34,7 +34,7 @@ problemdetails = { version = "0.2.1", features = ["axum"] }
 prometheus-client = "0.21.1"
 serde = { version = "1.0.164", features = ["derive"] }
 sha2 = "0.10.7"
-shared-files = "0.0.8"
+shared-files = "0.1.0"
 shortguid = { version = "0.5.0", features = ["serde"] }
 thiserror = "1.0.40"
 time = "0.3.22"
