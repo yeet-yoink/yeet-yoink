@@ -133,6 +133,10 @@ async fn handle_connection(
     //
     // `TokioExecutor` tells hyper to use `tokio::spawn` to spawn tasks.
     let builder = server::conn::auto::Builder::new(TokioExecutor::new());
+
+    // TODO: See https://github.com/hyperium/hyper-util/pull/66 "Support graceful shutdown on "auto conn""
+    //           https://github.com/tokio-rs/axum/pull/2355 "Update graceful shutdown example"
+    //           https://github.com/hyperium/hyper/issues/2862 "Make a GracefulShutdown helper in hyper-util"
     let serve = builder.serve_connection_with_upgrades(tcp_stream, hyper_service);
 
     select! {
