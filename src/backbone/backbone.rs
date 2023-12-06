@@ -3,17 +3,21 @@ use crate::backbone::file_record::{FileRecord, GetReaderError};
 use crate::backbone::file_writer::FileWriter;
 use crate::backbone::file_writer_guard::FileWriterGuard;
 use crate::backbone::WriteSummary;
+use crate::backends::{BackendCommand, BackendRegistry};
 use async_tempfile::TempFile;
-use axum::headers::ContentType;
 use axum::response::{IntoResponse, Response};
+use headers::ContentType;
 use hyper::StatusCode;
+use rendezvous::RendezvousGuard;
 use shared_files::{SharedFileWriter, SharedTemporaryFile};
 use shortguid::ShortGuid;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::mpsc::Sender;
 use tokio::sync::{mpsc, oneshot, RwLock};
+use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use tracing::info;
 
@@ -25,7 +29,9 @@ pub const TEMPORAL_LEASE: Duration = Duration::from_secs(5 * 60);
 /// This instance keeps track of currently processed files.
 pub struct Backbone {
     inner: Arc<RwLock<Inner>>,
-    sender: mpsc::Sender<BackboneCommand>,
+    sender: Sender<BackboneCommand>,
+    registry: BackendRegistry,
+    loop_handle: JoinHandle<()>,
 }
 
 struct Inner {
@@ -33,13 +39,33 @@ struct Inner {
 }
 
 impl Backbone {
-    pub fn new() -> Self {
+    pub fn new(mut registry: BackendRegistry, cleanup_rendezvous: RendezvousGuard) -> Self {
         let (sender, receiver) = mpsc::channel(1024);
         let inner = Arc::new(RwLock::new(Inner {
             open: HashMap::default(),
         }));
-        let _ = tokio::spawn(Self::command_loop(inner.clone(), receiver));
-        Self { inner, sender }
+
+        let backend_sender = registry
+            .get_sender()
+            .expect("Failed to obtain the sender from the registry");
+
+        let loop_handle = tokio::spawn(Self::command_loop(
+            inner.clone(),
+            receiver,
+            backend_sender,
+            cleanup_rendezvous,
+        ));
+        Self {
+            inner,
+            sender,
+            registry,
+            loop_handle,
+        }
+    }
+
+    pub async fn join(self) {
+        self.loop_handle.await.ok();
+        self.registry.join().await.ok();
     }
 
     /// Creates a new file buffer, registers it and returns a writer to it.
@@ -124,27 +150,31 @@ impl Backbone {
             .map_err(|e| NewFileError::FailedCreatingWriter(id, e))
     }
 
-    async fn command_loop(inner: Arc<RwLock<Inner>>, mut channel: mpsc::Receiver<BackboneCommand>) {
+    async fn command_loop(
+        inner: Arc<RwLock<Inner>>,
+        mut channel: mpsc::Receiver<BackboneCommand>,
+        backend_sender: Sender<BackendCommand>,
+        cleanup_rendezvous: RendezvousGuard,
+    ) {
         while let Some(command) = channel.recv().await {
             match command {
                 BackboneCommand::RemoveWriter(id) => {
-                    info!("Removing file {id} from bookkeeping");
+                    info!(file_id = %id, "Removing file {id} from bookkeeping");
                     let mut inner = inner.write().await;
                     inner.open.remove(&id);
                 }
-                BackboneCommand::ReadyForDistribution(id, _) => {
-                    info!("The file {id} was buffered completely and can now be distributed")
+                BackboneCommand::ReadyForDistribution(id, summary) => {
+                    info!(file_id = %id, "The file {id} was buffered completely and can now be distributed");
+                    backend_sender
+                        .send(BackendCommand::DistributeFile(id, summary))
+                        .await
+                        .ok();
                 }
             }
         }
 
         info!("The backbone command loop stopped");
-    }
-}
-
-impl Default for Backbone {
-    fn default() -> Self {
-        Self::new()
+        cleanup_rendezvous.completed();
     }
 }
 

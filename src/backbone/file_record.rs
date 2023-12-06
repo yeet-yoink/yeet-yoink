@@ -1,7 +1,7 @@
 use crate::backbone::backbone::BackboneCommand;
 use crate::backbone::file_writer_guard::WriteResult;
 use crate::backbone::WriteSummary;
-use axum::headers::ContentType;
+use headers::ContentType;
 use shared_files::{SharedTemporaryFile, SharedTemporaryFileReader};
 use shortguid::ShortGuid;
 use std::sync::Arc;
@@ -96,17 +96,17 @@ impl FileRecord {
         // Before starting the timeout, wait for the write to the file to complete.
         let summary = match writer_command.await {
             Ok(WriteResult::Success(summary)) => {
-                info!("File writing completed: {}", summary.hashes);
+                info!(file_id = %id, "File writing completed: {}", summary.hashes);
                 summary
             }
             Ok(WriteResult::Failed) => {
-                warn!("Writing to the file failed");
+                warn!(file_id = %id, "Writing to the file failed");
                 Self::close_file(&mut inner).await;
                 Self::remove_writer(id, backbone_command).await;
                 return;
             }
             Err(e) => {
-                warn!("The file writer channel failed: {e}");
+                warn!(file_id = %id, "The file writer channel failed: {e}");
                 Self::close_file(&mut inner).await;
                 Self::remove_writer(id, backbone_command).await;
                 return;
@@ -124,20 +124,24 @@ impl FileRecord {
             .send(BackboneCommand::ReadyForDistribution(id, summary))
             .await
         {
-            warn!("The backbone writer channel was closed while indicating a termination for file with ID {id}: {error}");
+            warn!(file_id = %id, "The backbone writer channel was closed while indicating a termination for file with ID {id}: {error}");
             return;
         }
 
+        // TODO: The lifetime handler also needs to listen to graceful shutdowns.
+        //       If that's not the case, open file entries may keep the server
+        //       alive even if the servers have already shut down.
+
         // Keep the file open for readers.
         Self::apply_temporal_lease(&id, duration).await;
-        info!("Read lease timed out for file {id}; removing it");
+        info!(file_id = %id, "Read lease timed out for file {id}; removing it");
 
         // Gracefully close the file.
         Self::remove_writer(id, backbone_command).await;
     }
 
     async fn apply_temporal_lease(id: &ShortGuid, duration: Duration) {
-        info!("File {id} will accept new readers for {duration:?}");
+        info!(file_id = %id, "File {id} will accept new readers for {duration:?}");
         tokio::time::sleep(duration).await
     }
 
@@ -151,7 +155,7 @@ impl FileRecord {
             .send(BackboneCommand::RemoveWriter(id))
             .await
         {
-            warn!("The backbone writer channel was closed while indicating a termination for file with ID {id}: {error}");
+            warn!(file_id = %id, "The backbone writer channel was closed while indicating a termination for file with ID {id}: {error}");
         }
     }
 }
