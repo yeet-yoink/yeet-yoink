@@ -1,5 +1,5 @@
 use crate::app_config::AppConfig;
-use crate::backbone::WriteSummary;
+use crate::backbone::{FileAccessor, WriteSummary};
 use crate::backends::memcache::{MemcacheBackendConfig, MemcacheConnectionString};
 use crate::backends::registry::BackendInfo;
 use crate::backends::{
@@ -12,6 +12,7 @@ use r2d2_memcache::MemcacheConnectionManager;
 use shortguid::ShortGuid;
 use std::str::FromStr;
 use std::sync::Arc;
+use tokio::io::AsyncReadExt;
 
 pub struct MemcacheBackend {
     /// The tag identifying the backend.
@@ -28,7 +29,7 @@ impl MemcacheBackend {
         let pool = Pool::builder()
             .min_idle(Some(1))
             .build(manager)
-            .map_err(|e| MemcacheBackendConstructionError::FailedToCreatePool(e))?;
+            .map_err(MemcacheBackendConstructionError::FailedToCreatePool)?;
         Ok(Self {
             tag: config.tag.clone(),
             pool,
@@ -46,8 +47,26 @@ impl Backend for MemcacheBackend {
         &self,
         id: ShortGuid,
         summary: Arc<WriteSummary>,
+        file_accessor: Arc<dyn FileAccessor>,
     ) -> Result<(), DistributionError> {
-        todo!()
+        // use a Vec to collect the stream chunks
+        let mut buffer: Vec<u8> = Vec::with_capacity(summary.file_size_bytes);
+
+        let mut file = file_accessor.get_file(id).await?;
+        file.read_to_end(&mut buffer).await?;
+
+        // Get a memoized connection
+        let client = self.pool.get().unwrap();
+
+        // Collect the data from the stream and write it to a Memcached server
+        let key = id.to_string();
+        client
+            .set(&key, buffer.as_slice(), 0)
+            .map_err(|e| DistributionError::BackendSpecific(Box::new(e)))?;
+
+        // TODO: Write item metadata.
+
+        Ok(())
     }
 }
 

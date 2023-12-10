@@ -1,6 +1,6 @@
 use crate::app_config::AppConfig;
-use crate::backbone::WriteSummary;
-use crate::backends::{DistributionError, DynBackend};
+use crate::backbone::{FileAccessor, FileAccessorBridge, WriteSummary};
+use crate::backends::DynBackend;
 use rendezvous::RendezvousGuard;
 use shortguid::ShortGuid;
 use std::error::Error;
@@ -18,13 +18,25 @@ pub struct BackendRegistry {
 }
 
 impl BackendRegistry {
-    pub fn builder(cleanup_rendezvous: RendezvousGuard) -> BackendRegistryBuilder {
-        BackendRegistryBuilder::new(cleanup_rendezvous)
+    pub fn builder(
+        cleanup_rendezvous: RendezvousGuard,
+        file_accessor: Arc<dyn FileAccessor>,
+    ) -> BackendRegistryBuilder {
+        BackendRegistryBuilder::new(cleanup_rendezvous, file_accessor)
     }
 
-    fn new(cleanup_rendezvous: RendezvousGuard, backends: Vec<DynBackend>) -> Self {
+    fn new(
+        cleanup_rendezvous: RendezvousGuard,
+        backends: Vec<DynBackend>,
+        file_accessor: Arc<dyn FileAccessor>,
+    ) -> Self {
         let (sender, receiver) = mpsc::channel(EVENT_BUFFER_SIZE);
-        let handle = tokio::spawn(Self::handle_events(backends, receiver, cleanup_rendezvous));
+        let handle = tokio::spawn(Self::handle_events(
+            backends,
+            receiver,
+            cleanup_rendezvous,
+            file_accessor,
+        ));
         Self {
             handle,
             sender: Some(sender),
@@ -43,6 +55,7 @@ impl BackendRegistry {
         backends: Vec<DynBackend>,
         mut receiver: Receiver<BackendCommand>,
         cleanup_rendezvous: RendezvousGuard,
+        file_accessor: Arc<dyn FileAccessor>,
     ) {
         while let Some(event) = receiver.recv().await {
             match event {
@@ -54,7 +67,10 @@ impl BackendRegistry {
 
                     // TODO: Initiate tasks in priority order?
                     for backend in &backends {
-                        match backend.distribute_file(id, summary.clone()).await {
+                        match backend
+                            .distribute_file(id, summary.clone(), file_accessor.clone())
+                            .await
+                        {
                             Ok(_) => {}
                             Err(e) => {
                                 warn!(file_id = %id, "Failed to distribute file using backend {tag}: {error}", tag = backend.tag(), error = e);
@@ -73,19 +89,21 @@ impl BackendRegistry {
 
 pub struct BackendRegistryBuilder {
     backends: Vec<DynBackend>,
-    pub cleanup_rendezvous: RendezvousGuard,
+    cleanup_rendezvous: RendezvousGuard,
+    file_accessor: Arc<dyn FileAccessor>,
 }
 
 impl BackendRegistryBuilder {
-    fn new(cleanup_rendezvous: RendezvousGuard) -> Self {
+    fn new(cleanup_rendezvous: RendezvousGuard, file_accessor: Arc<dyn FileAccessor>) -> Self {
         Self {
             backends: Vec::default(),
             cleanup_rendezvous,
+            file_accessor,
         }
     }
 
     pub fn build(self) -> BackendRegistry {
-        BackendRegistry::new(self.cleanup_rendezvous, self.backends)
+        BackendRegistry::new(self.cleanup_rendezvous, self.backends, self.file_accessor)
     }
 
     /// Adds backends to the application.
@@ -120,7 +138,7 @@ impl BackendRegistryBuilder {
     /// };
     /// ```
     pub fn add_backends<T>(
-        mut self,
+        self,
         config: &AppConfig,
     ) -> Result<BackendRegistryBuilder, RegisterBackendError>
     where

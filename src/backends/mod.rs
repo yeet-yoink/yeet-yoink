@@ -1,4 +1,4 @@
-use crate::backbone::WriteSummary;
+use crate::backbone::{FileAccessor, FileAccessorError, WriteSummary};
 pub use crate::backends::dyn_backend::DynBackend;
 pub use crate::backends::map_ok::{BoxOkIter, MapOkIter};
 pub use crate::backends::registry::{BackendCommand, BackendRegistry, TryCreateFromConfig};
@@ -24,11 +24,16 @@ pub trait Backend: Send + Sync {
         &self,
         id: ShortGuid,
         summary: Arc<WriteSummary>,
+        file_accessor: Arc<dyn FileAccessor>,
     ) -> Result<(), DistributionError>;
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum DistributionError {
     #[error(transparent)]
-    Generic(#[from] Box<dyn Error>),
+    BackendSpecific(Box<dyn Error>),
+    #[error(transparent)]
+    FileAccessor(#[from] FileAccessorError),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 }

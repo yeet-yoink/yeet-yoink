@@ -4,9 +4,9 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 use crate::app_config::{load_config, AppConfig};
-use crate::backbone::Backbone;
+use crate::backbone::{Backbone, FileAccessorBridge};
 use crate::backends::memcache::MemcacheBackend;
-use crate::backends::{BackendRegistry, TryCreateFromConfig};
+use crate::backends::BackendRegistry;
 use crate::handlers::*;
 use axum::Router;
 use clap::ArgMatches;
@@ -68,8 +68,10 @@ async fn main() -> ExitCode {
     // Create a rendezvous channel to ensure all relevant tasks have been shut down.
     let rendezvous = Rendezvous::new();
 
+    let file_accessor = Arc::new(FileAccessorBridge::default());
+
     // TODO: Create and register backends.
-    let registry = BackendRegistry::builder(rendezvous.fork_guard());
+    let registry = BackendRegistry::builder(rendezvous.fork_guard(), file_accessor.clone());
 
     // TODO: This currently blocks if the Memcached instance is unavailable.
     //       We would prefer a solution where we can gracefully react to this in order to
@@ -81,6 +83,7 @@ async fn main() -> ExitCode {
     };
 
     let backbone = Arc::new(Backbone::new(registry.build(), rendezvous.fork_guard()));
+    file_accessor.set_backbone(&backbone);
 
     // The application state is shared with the Axum servers.
     let app_state = AppState {
