@@ -1,5 +1,9 @@
 use crate::backends::memcache::MemcacheConnectionString;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
+
+/// The default expiration time for Memcached entries.
+pub const DEFAULT_EXPIRATION: Duration = Duration::from_secs(3600);
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct MemcacheBackendConfig {
@@ -12,6 +16,17 @@ pub struct MemcacheBackendConfig {
     /// memcache://127.0.0.1:12345?timeout=10&tcp_nodelay=true
     /// ```
     pub connection_string: MemcacheConnectionString,
+    /// The number of seconds after which the item is considered expired. Use `0`
+    /// to keep the entry indefinitely. Defaults to [`DEFAULT_EXPIRATION`].
+    ///
+    /// ### Example
+    ///
+    /// To keep the example for 5 minutes, use a value of 300 seconds:
+    ///
+    /// ```
+    /// 300
+    /// ```
+    pub expiration_sec: Option<u32>,
 }
 
 #[cfg(test)]
@@ -23,6 +38,7 @@ mod tests {
         let yaml = r#"
             tag: memcache-1
             connection_string: "memcache://127.0.0.1:12345?timeout=10&tcp_nodelay=true"
+            expiration_sec: 500
         "#;
 
         let config: MemcacheBackendConfig =
@@ -32,5 +48,6 @@ mod tests {
             config.connection_string,
             "memcache://127.0.0.1:12345?timeout=10&tcp_nodelay=true"
         );
+        assert_eq!(config.expiration_sec, Some(500));
     }
 }

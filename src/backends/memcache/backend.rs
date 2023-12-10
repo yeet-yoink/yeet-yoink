@@ -1,24 +1,30 @@
 use crate::app_config::AppConfig;
-use crate::backbone::{FileAccessor, WriteSummary};
-use crate::backends::memcache::{MemcacheBackendConfig, MemcacheConnectionString};
+use crate::backbone::{FileAccessor, FileReader, WriteSummary};
+use crate::backends::memcache::config::DEFAULT_EXPIRATION;
+use crate::backends::memcache::MemcacheBackendConfig;
 use crate::backends::registry::BackendInfo;
 use crate::backends::{
     Backend, BoxOkIter, DistributionError, DynBackend, MapOkIter, TryCreateFromConfig,
 };
 use axum::async_trait;
-use memcache::Client;
 use r2d2::Pool;
+use r2d2_memcache::memcache::{MemcacheError, ToMemcacheValue};
 use r2d2_memcache::MemcacheConnectionManager;
 use shortguid::ShortGuid;
-use std::str::FromStr;
+use std::cell::Cell;
 use std::sync::Arc;
-use tokio::io::AsyncReadExt;
+use std::time::Duration;
+use tokio::task::spawn_blocking;
+use tokio_util::io::SyncIoBridge;
+use tracing::trace;
 
 pub struct MemcacheBackend {
     /// The tag identifying the backend.
     tag: String,
     /// The connection pool
     pool: Pool<MemcacheConnectionManager>,
+    /// The expiration time for stored entries.
+    expiration_secs: u32,
 }
 
 impl MemcacheBackend {
@@ -30,9 +36,16 @@ impl MemcacheBackend {
             .min_idle(Some(1))
             .build(manager)
             .map_err(MemcacheBackendConstructionError::FailedToCreatePool)?;
+
+        let expiration_secs = config
+            .expiration_sec
+            .map_or(DEFAULT_EXPIRATION, |secs| Duration::from_secs(secs as _))
+            .as_secs()
+            .min(u32::MAX as _) as u32;
         Ok(Self {
             tag: config.tag.clone(),
             pool,
+            expiration_secs,
         })
     }
 }
@@ -49,24 +62,66 @@ impl Backend for MemcacheBackend {
         summary: Arc<WriteSummary>,
         file_accessor: Arc<dyn FileAccessor>,
     ) -> Result<(), DistributionError> {
-        // use a Vec to collect the stream chunks
-        let mut buffer: Vec<u8> = Vec::with_capacity(summary.file_size_bytes);
-
-        let mut file = file_accessor.get_file(id).await?;
-        file.read_to_end(&mut buffer).await?;
-
-        // Get a memoized connection
+        let expiration = self.expiration_secs;
+        let file = file_accessor.get_file(id).await?;
         let client = self.pool.get().unwrap();
 
-        // Collect the data from the stream and write it to a Memcached server
-        let key = id.to_string();
-        client
-            .set(&key, buffer.as_slice(), 0)
-            .map_err(|e| DistributionError::BackendSpecific(Box::new(e)))?;
+        let result: Result<(), MemcacheError> = spawn_blocking(move || {
+            let file = StreamWrapper::new(summary, file);
 
-        // TODO: Write item metadata.
+            let key = format!("data-{}", id);
+            client.set(&key, file, expiration)?;
+            trace!("Stored data under key {key} with expiration {expiration}");
 
-        Ok(())
+            // TODO: Write item metadata.
+
+            Ok(())
+        })
+        .await?;
+
+        match result {
+            Ok(()) => Ok(()),
+            Err(e) => Err(DistributionError::BackendSpecific(Box::new(e))),
+        }
+    }
+}
+
+struct StreamWrapper {
+    summary: Arc<WriteSummary>,
+    bridge: Cell<Option<SyncIoBridge<FileReader>>>,
+}
+
+impl StreamWrapper {
+    pub fn new(summary: Arc<WriteSummary>, reader: FileReader) -> StreamWrapper {
+        Self {
+            summary,
+            bridge: Cell::new(Some(SyncIoBridge::new(reader))),
+        }
+    }
+}
+
+impl<W> ToMemcacheValue<W> for StreamWrapper
+where
+    W: std::io::Write,
+{
+    fn get_flags(&self) -> u32 {
+        0_u32
+    }
+
+    fn get_length(&self) -> usize {
+        self.summary.file_size_bytes
+    }
+
+    fn write_to(&self, stream: &mut W) -> std::io::Result<()> {
+        if let Some(mut bridge) = self.bridge.take() {
+            std::io::copy(&mut bridge, stream)?;
+            Ok(())
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Source already read to end",
+            ))
+        }
     }
 }
 
@@ -102,37 +157,4 @@ impl TryCreateFromConfig for MemcacheBackend {
 pub enum MemcacheBackendConstructionError {
     #[error("Failed to create pool")]
     FailedToCreatePool(r2d2::Error),
-}
-
-fn _trivial() {
-    let server = MemcacheConnectionString::from_str("memcache://127.0.0.1:11211")
-        .expect("Failed to parse connection string");
-    let client = Client::connect(server).expect("Failed to connect to Memcache server");
-
-    client
-        .set("my_key", "my_value", 0)
-        .expect("Failed to set value");
-    let value: Option<String> = client.get("my_key").expect("Failed to get value");
-    println!("Retrieved value: {:?}", value);
-    assert_eq!(value.unwrap(), "my_value");
-}
-
-fn _pooled() {
-    // Create a connection manager
-    let server = MemcacheConnectionString::from_str("memcache://127.0.0.1:11211")
-        .expect("Failed to parse connection string");
-    let manager = MemcacheConnectionManager::new(server);
-
-    // Create the connection pool
-    let pool = Pool::new(manager).expect("Failed to create pool");
-
-    // Get a connection from the pool
-    let conn = pool.get().expect("Failed to get connection from pool");
-
-    // Use the connection (e.g., set and get a value)
-    conn.set("my_key", "my_value", 0)
-        .expect("Failed to set value");
-    let value: Option<String> = conn.get("my_key").expect("Failed to get value");
-    println!("Retrieved value: {:?}", value);
-    assert_eq!(value.unwrap(), "my_value");
 }

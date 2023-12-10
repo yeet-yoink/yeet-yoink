@@ -36,4 +36,6 @@ pub enum DistributionError {
     FileAccessor(#[from] FileAccessorError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Join(#[from] tokio::task::JoinError),
 }
