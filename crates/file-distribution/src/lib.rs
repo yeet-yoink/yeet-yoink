@@ -9,7 +9,7 @@ pub mod hash;
 pub mod protobuf;
 mod write_summary;
 
-pub use file_accessor::{FileAccessor, FileAccessorError, GetFileReaderError};
+pub use file_accessor::{DynFileAccessor, FileAccessor, FileAccessorError, GetFileReaderError};
 pub use file_hashes::FileHashes;
 pub use file_reader::{BoxedFileReader, FileReaderTrait};
 pub use write_summary::WriteSummary;

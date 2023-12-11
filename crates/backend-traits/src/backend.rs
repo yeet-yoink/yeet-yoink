@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use file_distribution::{FileAccessor, FileAccessorError, WriteSummary};
+use file_distribution::{DynFileAccessor, FileAccessor, FileAccessorError, WriteSummary};
 use shortguid::ShortGuid;
 use std::error::Error;
 use std::sync::Arc;
@@ -14,7 +14,7 @@ pub trait Backend: Send + Sync {
         &self,
         id: ShortGuid,
         summary: Arc<WriteSummary>,
-        file_accessor: Arc<dyn FileAccessor>,
+        file_accessor: DynFileAccessor,
     ) -> Result<(), DistributionError>;
 }
 

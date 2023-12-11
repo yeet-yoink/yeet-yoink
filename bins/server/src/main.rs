@@ -23,6 +23,7 @@ use tracing::{debug, error, info, warn};
 use crate::backend_registry::BackendRegistry;
 #[cfg(feature = "memcache")]
 use backend_memcache::MemcacheBackend;
+use file_distribution::DynFileAccessor;
 
 mod backend_registry;
 mod commands;
@@ -45,7 +46,7 @@ async fn main() -> ExitCode {
 
     info!("Hi. 👋");
 
-    let dirs = match ProjectDirs::from("io.github", "sunsided", "yeet-yoink") {
+    let dirs = match ProjectDirs::from("io.github", "yeet-yoink", "yeet-yoink") {
         Some(dirs) => dirs,
         None => {
             error!("Could not determine the project directories");
@@ -70,7 +71,10 @@ async fn main() -> ExitCode {
     let file_accessor = Arc::new(FileAccessorBridge::default());
 
     // TODO: Create and register backends.
-    let registry = BackendRegistry::builder(rendezvous.fork_guard(), file_accessor.clone());
+    let registry = BackendRegistry::builder(
+        rendezvous.fork_guard(),
+        DynFileAccessor::wrap(&file_accessor),
+    );
 
     // TODO: This currently blocks if the Memcached instance is unavailable.
     //       We would prefer a solution where we can gracefully react to this in order to
