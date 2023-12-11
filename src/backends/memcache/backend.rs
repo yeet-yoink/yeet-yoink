@@ -6,7 +6,7 @@ use crate::backends::registry::BackendInfo;
 use crate::backends::{
     Backend, BoxOkIter, DistributionError, DynBackend, MapOkIter, TryCreateFromConfig,
 };
-use crate::messages::ItemMetadata;
+use crate::protobuf::ItemMetadata;
 use axum::async_trait;
 use r2d2::Pool;
 use r2d2_memcache::memcache::{MemcacheError, ToMemcacheValue};
@@ -63,6 +63,8 @@ impl Backend for MemcacheBackend {
         summary: Arc<WriteSummary>,
         file_accessor: Arc<dyn FileAccessor>,
     ) -> Result<(), DistributionError> {
+        // TODO: Sanity check the file size - don't store if too large.
+
         let expiration = self.expiration_secs;
         let file = file_accessor.get_file(id).await?;
         let client = self.pool.get().unwrap();

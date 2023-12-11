@@ -29,8 +29,8 @@ mod commands;
 mod handlers;
 mod health;
 mod logging;
-mod messages;
 mod metrics;
+mod protobuf;
 mod services;
 
 #[derive(Clone)]
