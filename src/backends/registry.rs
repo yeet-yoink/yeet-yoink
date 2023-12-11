@@ -203,7 +203,7 @@ where
     where
         Self: Sized,
     {
-        registry.add_backends::<Self>(&config)
+        registry.add_backends::<Self>(config)
     }
 }
 

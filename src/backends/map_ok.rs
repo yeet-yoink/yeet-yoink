@@ -93,8 +93,10 @@ where
 pub struct MapOk<I, T, E, U, F> {
     iter: I,
     f: F,
-    _phantom: PhantomData<fn(T, E) -> (U, Result<T, E>)>,
+    _phantom: PhantomData<MapFn<T, E, U>>,
 }
+
+type MapFn<T, E, U> = fn(T, E) -> (U, Result<T, E>);
 
 impl<I, T, E, U, F> Iterator for MapOk<I, T, E, U, F>
 where
@@ -122,14 +124,17 @@ where
 /// Implementations of this trait must provide an implementation for the `box_ok` function, which
 /// returns a `MapOk` iterator that boxes each Ok value encountered during iteration.
 pub trait BoxOkIter<T, E>: Sized {
-    fn box_ok(self) -> MapOk<Self, T, E, Box<T>, fn(T) -> Box<T>>;
+    fn box_ok(self) -> MapOk<Self, T, E, Box<T>, BoxingFn<T>>;
 }
+
+/// A function that boxes its argument.
+pub type BoxingFn<T> = fn(T) -> Box<T>;
 
 impl<I, T, E> BoxOkIter<T, E> for I
 where
     I: Iterator<Item = Result<T, E>>,
 {
-    fn box_ok(self) -> MapOk<Self, T, E, Box<T>, fn(T) -> Box<T>> {
+    fn box_ok(self) -> MapOk<Self, T, E, Box<T>, BoxingFn<T>> {
         self.map_ok(Box::new)
     }
 }

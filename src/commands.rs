@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 pub fn build_command() -> Command {
-    let command = Command::new("Yeet/Yoink")
+    Command::new("Yeet/Yoink")
         .version(env!("CARGO_PKG_VERSION"))
         .author("Markus Mayer")
         .about("A service for storing and retrieving files")
@@ -43,8 +43,7 @@ pub fn build_command() -> Command {
                 .value_hint(clap::ValueHint::FilePath)
                 .help("The config file to load")
                 .help_heading("Configuration"),
-        );
-    command
+        )
 }
 
 fn logging_style(s: &str) -> Result<LoggingStyle, String> {

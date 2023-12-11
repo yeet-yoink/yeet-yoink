@@ -124,7 +124,7 @@ async fn serve_requests(matches: ArgMatches, app_state: AppState) -> Result<(), 
         .map_yoink_endpoint()
         .map_health_endpoints()
         .with_state(app_state)
-        .layer(services::HttpCallMetricsLayer::default());
+        .layer(services::HttpCallMetricsLayer);
 
     let make_svc = app.into_make_service();
 

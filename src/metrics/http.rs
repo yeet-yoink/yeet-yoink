@@ -37,14 +37,14 @@ struct InFlightLabels {
 /// The HTTP method to track.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum HttpMethod {
-    OPTIONS,
-    GET,
-    POST,
-    PUT,
-    DELETE,
-    HEAD,
-    PATCH,
-    UNHANDLED(Method),
+    Options,
+    Get,
+    Post,
+    Put,
+    Delete,
+    Head,
+    Patch,
+    Unhandled(Method),
 }
 
 impl EncodeLabelValue for HttpMethod {
@@ -56,14 +56,14 @@ impl EncodeLabelValue for HttpMethod {
 impl Display for HttpMethod {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            HttpMethod::OPTIONS => write!(f, "OPTIONS"),
-            HttpMethod::GET => write!(f, "GET"),
-            HttpMethod::POST => write!(f, "POST"),
-            HttpMethod::PUT => write!(f, "PUT"),
-            HttpMethod::DELETE => write!(f, "DELETE"),
-            HttpMethod::HEAD => write!(f, "HEAD"),
-            HttpMethod::PATCH => write!(f, "PATCH"),
-            HttpMethod::UNHANDLED(other) => write!(f, "{other}"),
+            Self::Options => write!(f, "OPTIONS"),
+            Self::Get => write!(f, "GET"),
+            Self::Post => write!(f, "POST"),
+            Self::Put => write!(f, "PUT"),
+            Self::Delete => write!(f, "DELETE"),
+            Self::Head => write!(f, "HEAD"),
+            Self::Patch => write!(f, "PATCH"),
+            Self::Unhandled(other) => write!(f, "{other}"),
         }
     }
 }
@@ -71,14 +71,14 @@ impl Display for HttpMethod {
 impl From<&Method> for HttpMethod {
     fn from(value: &Method) -> Self {
         match value {
-            &Method::GET => Self::GET,
-            &Method::OPTIONS => Self::OPTIONS,
-            &Method::POST => Self::POST,
-            &Method::PUT => Self::PUT,
-            &Method::DELETE => Self::DELETE,
-            &Method::HEAD => Self::HEAD,
-            &Method::PATCH => Self::PATCH,
-            other => Self::UNHANDLED(other.clone()),
+            &Method::GET => Self::Get,
+            &Method::OPTIONS => Self::Options,
+            &Method::POST => Self::Post,
+            &Method::PUT => Self::Put,
+            &Method::DELETE => Self::Delete,
+            &Method::HEAD => Self::Head,
+            &Method::PATCH => Self::Patch,
+            other => Self::Unhandled(other.clone()),
         }
     }
 }

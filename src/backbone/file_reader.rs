@@ -54,10 +54,9 @@ impl FileReader {
     }
 
     pub fn content_type(&self) -> Option<Cow<str>> {
-        match &self.content_type {
-            None => None,
-            Some(content_type) => Some(Cow::from(content_type.as_str())),
-        }
+        self.content_type
+            .as_ref()
+            .map(|content_type| Cow::from(content_type.as_str()))
     }
 }
 

@@ -16,6 +16,7 @@ use mime_db::extension;
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use shared_files::FileSize;
 use shortguid::ShortGuid;
+use std::borrow::Borrow;
 use tokio_util::io::ReaderStream;
 
 /// Escape control set for URL/hex-encoding file names in the Content-Disposition header.
@@ -105,11 +106,11 @@ async fn do_yoink(
 
         let file_name = &summary.file_name;
 
-        let header = content_disposition_from_optional_name(&id, &content_type, file_name);
+        let header = content_disposition_from_optional_name(id, &content_type, file_name);
         headers.push(header);
     } else {
         // Use a default file name when none is known.
-        let header = default_content_disposition_header(&id, &content_type);
+        let header = default_content_disposition_header(id, &content_type);
         headers.push(header);
     }
 
@@ -132,28 +133,33 @@ async fn do_yoink(
 
 /// Attempts to generate a `Content-Disposition` header from the optionally specified
 /// file name. If no name was set, falls back to a generated file name based on the ID.
-fn content_disposition_from_optional_name(
-    id: &ShortGuid,
+fn content_disposition_from_optional_name<I>(
+    id: I,
     content_type: &String,
     file_name: &Option<String>,
-) -> (HeaderName, String) {
+) -> (HeaderName, String)
+where
+    I: Borrow<ShortGuid>,
+{
+    let id = id.borrow();
     if let Some(file_name) = file_name {
-        let file_name = utf8_percent_encode(&file_name, &ASCII_CONTROLS).to_string();
+        let file_name = utf8_percent_encode(file_name, &ASCII_CONTROLS).to_string();
         (
             header::CONTENT_DISPOSITION,
             format!("attachment; filename=\"{file_name}\""),
         )
     } else {
-        default_content_disposition_header(&id, &content_type)
+        default_content_disposition_header(id, content_type)
     }
 }
 
 /// Generates a `Content-Disposition` header based on the ID. If the `Content-Type` was specified,
 /// a default extension will be appended to the file.
-fn default_content_disposition_header(
-    id: &ShortGuid,
-    content_type: &String,
-) -> (HeaderName, String) {
+fn default_content_disposition_header<I>(id: I, content_type: &String) -> (HeaderName, String)
+where
+    I: Borrow<ShortGuid>,
+{
+    let id = id.borrow();
     if content_type.is_empty() {
         (
             header::CONTENT_DISPOSITION,
@@ -161,7 +167,7 @@ fn default_content_disposition_header(
         )
     } else {
         // See also https://github.com/viz-rs/mime-db/pull/9
-        let ext = extension(&content_type).unwrap_or("");
+        let ext = extension(content_type).unwrap_or("");
         if ext.is_empty() {
             (
                 header::CONTENT_DISPOSITION,

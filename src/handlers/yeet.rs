@@ -121,7 +121,7 @@ async fn do_yeet(
 
         while data.has_remaining() {
             let chunk = data.chunk();
-            match writer.write(&chunk).await {
+            match writer.write(chunk).await {
                 Ok(0) => {}
                 Ok(n) => {
                     bytes_written += n;

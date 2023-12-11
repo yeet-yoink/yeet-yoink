@@ -224,9 +224,7 @@ impl From<NewFileError> for Response {
             NewFileError::InternalErrorMayRetry(id) => {
                 problemdetails::new(StatusCode::INTERNAL_SERVER_ERROR)
                     .with_title("File not found")
-                    .with_detail(format!(
-                        "Failed to create temporary file - ID already in use"
-                    ))
+                    .with_detail("Failed to create temporary file - ID already in use".to_string())
                     .with_value("id", id.to_string())
                     .into_response()
             }
