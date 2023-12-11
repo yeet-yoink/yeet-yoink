@@ -7,3 +7,7 @@ edition = "2021"
 hyper = "0.14.27"
 lazy_static = "1.4.0"
 prometheus-client = "0.22.0"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

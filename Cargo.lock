@@ -107,6 +107,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4668cab20f66d8d020e1fbc0ebe47217433c1b6c8f2040faf858554e394ace6"
 
 [[package]]
+name = "app-config"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "config",
+ "matches",
+ "serde",
+ "serde_yaml",
+ "thiserror",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "async-tempfile"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -237,9 +252,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "backend-memcache"
+version = "0.1.0"
+dependencies = [
+ "app-config",
+ "async-trait",
+ "backbone-traits",
+ "backend-traits",
+ "file_distribution",
+ "map-ok",
+ "memcache 0.17.1",
+ "r2d2",
+ "r2d2-memcache",
+ "serde",
+ "shortguid",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "backend-traits"
 version = "0.1.0"
 dependencies = [
+ "app-config",
  "async-trait",
  "backbone-traits",
  "file_distribution",
@@ -615,7 +652,11 @@ checksum = "25cbce373ec4653f1a01a31e8a5e5ec0c622dc27ff9c4e6606eefef5cbbed4a5"
 name = "file_distribution"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "md5",
+ "prost",
+ "prost-build",
+ "prost-derive",
  "sha2",
  "shortguid",
  "tokio",
@@ -1089,6 +1130,12 @@ checksum = "8263075bb86c5a1b1427b5ae862e8889656f126e9f77c484496e8b47cf5c5558"
 dependencies = [
  "regex-automata 0.1.10",
 ]
+
+[[package]]
+name = "matches"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2532096657941c2fea9c289d370a250971c689d4f143798ff67113ec042024a5"
 
 [[package]]
 name = "matchit"
@@ -2693,16 +2740,15 @@ name = "yeet-yoink"
 version = "0.1.0-unstable"
 dependencies = [
  "anyhow",
- "async-tempfile",
+ "app-config",
  "axum",
  "backbone",
  "backbone-traits",
+ "backend-memcache",
  "backend-traits",
  "base64 0.21.5",
- "bytes",
  "chrono",
  "clap",
- "config",
  "crossbeam",
  "ctrlc",
  "directories",
@@ -2713,20 +2759,11 @@ dependencies = [
  "headers-content-md5",
  "hex",
  "hyper",
- "lazy_static",
- "map-ok",
- "memcache 0.17.1",
  "metrics",
  "mime-db",
  "percent-encoding",
  "pin-project",
  "problemdetails",
- "prometheus-client",
- "prost",
- "prost-build",
- "prost-derive",
- "r2d2",
- "r2d2-memcache",
  "rendezvous",
  "serde",
  "serde_yaml",

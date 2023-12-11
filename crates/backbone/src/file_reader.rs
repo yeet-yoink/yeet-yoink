@@ -18,7 +18,7 @@ pub struct FileReader {
     content_type: Option<String>,
     created: Instant,
     expiration_duration: Duration,
-    pub summary: Option<Arc<WriteSummary>>,
+    summary: Option<Arc<WriteSummary>>,
 }
 
 impl FileReader {

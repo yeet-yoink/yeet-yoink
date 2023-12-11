@@ -1,3 +1,10 @@
+// only enables the `doc_cfg` feature when
+// the `docsrs` configuration attribute is defined
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
+#[cfg(feature = "memcache")]
+pub mod memcache;
+
 use clap::ArgMatches;
 use config::builder::DefaultState;
 use config::{ConfigBuilder, File, FileFormat};
@@ -15,7 +22,7 @@ pub struct AppConfig {
 pub struct BackendsConfig {
     #[cfg_attr(docsrs, doc(cfg(feature = "memcache")))]
     #[cfg(feature = "memcache")]
-    pub memcache: Vec<crate::backends::memcache::MemcacheBackendConfig>,
+    pub memcache: Vec<crate::memcache::MemcacheBackendConfig>,
 }
 
 pub fn load_config(config_dir: &Path, matches: &ArgMatches) -> Result<AppConfig, anyhow::Error> {

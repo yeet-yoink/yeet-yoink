@@ -1,12 +1,13 @@
-use crate::app_config::AppConfig;
-use crate::backends::memcache::config::DEFAULT_EXPIRATION;
-use crate::backends::memcache::MemcacheBackendConfig;
-use crate::backends::registry::BackendInfo;
-use crate::backends::TryCreateFromConfig;
-use crate::protobuf::ItemMetadata;
-use axum::async_trait;
+use crate::connection_string::MemcacheConnectionStringWrapper;
+use app_config::{
+    memcache::{MemcacheBackendConfig, DEFAULT_EXPIRATION},
+    AppConfig,
+};
+use async_trait::async_trait;
 use backbone_traits::{BoxedFileReader, FileAccessor};
 use backend_traits::{Backend, DistributionError, DynBackend};
+use backend_traits::{BackendInfo, TryCreateFromConfig};
+use file_distribution::protobuf::ItemMetadata;
 use file_distribution::WriteSummary;
 use map_ok::{BoxOk, MapOk};
 use r2d2::Pool;
@@ -33,7 +34,9 @@ impl MemcacheBackend {
     pub fn try_new(
         config: &MemcacheBackendConfig,
     ) -> Result<Self, MemcacheBackendConstructionError> {
-        let manager = MemcacheConnectionManager::new(&config.connection_string);
+        let manager = MemcacheConnectionManager::new(MemcacheConnectionStringWrapper::from(
+            &config.connection_string,
+        ));
         let pool = Pool::builder()
             .min_idle(Some(1))
             .build(manager)

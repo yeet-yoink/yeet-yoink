@@ -1,7 +1,35 @@
-use memcache::Url;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
+use std::time::Duration;
+use url::Url;
+
+/// The default expiration time for Memcached entries.
+pub const DEFAULT_EXPIRATION: Duration = Duration::from_secs(3600);
+
+#[derive(Default, Debug, Serialize, Deserialize)]
+pub struct MemcacheBackendConfig {
+    /// A tag to identify the backend.
+    pub tag: String,
+    /// The connection string
+    ///
+    /// ## Example
+    /// ```text
+    /// memcache://127.0.0.1:12345?timeout=10&tcp_nodelay=true
+    /// ```
+    pub connection_string: MemcacheConnectionString,
+    /// The number of seconds after which the item is considered expired. Use `0`
+    /// to keep the entry indefinitely. Defaults to [`DEFAULT_EXPIRATION`].
+    ///
+    /// ### Example
+    ///
+    /// To keep the example for 5 minutes, use a value of 300 seconds:
+    ///
+    /// ```
+    /// 300
+    /// ```
+    pub expiration_sec: Option<u32>,
+}
 
 /// A Memcached connection string.
 #[derive(Debug, Default, Clone, Ord, PartialOrd, Eq, PartialEq)]
@@ -22,12 +50,16 @@ impl MemcacheConnectionString {
         }
     }
 
-    fn get_urls(self) -> Vec<String> {
+    pub fn get_urls(&self) -> Vec<String> {
         if self.0.is_empty() {
             Vec::default()
         } else {
-            vec![self.0]
+            vec![self.0.clone()]
         }
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
     }
 }
 
@@ -64,27 +96,9 @@ impl<'de> Deserialize<'de> for MemcacheConnectionString {
     }
 }
 
-impl memcache::Connectable for MemcacheConnectionString {
-    fn get_urls(self) -> Vec<String> {
-        self.get_urls()
-    }
-}
-
-impl r2d2_memcache::memcache::Connectable for MemcacheConnectionString {
-    fn get_urls(self) -> Vec<String> {
-        self.get_urls()
-    }
-}
-
 impl PartialEq<&str> for MemcacheConnectionString {
     fn eq(&self, other: &&str) -> bool {
         self.0.eq(other)
-    }
-}
-
-impl r2d2_memcache::memcache::Connectable for &MemcacheConnectionString {
-    fn get_urls(self) -> Vec<String> {
-        vec![self.0.clone()]
     }
 }
 
@@ -97,6 +111,24 @@ impl Display for MemcacheConnectionString {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deserialize_memcache_config_works() {
+        let yaml = r#"
+            tag: memcache-1
+            connection_string: "memcache://127.0.0.1:12345?timeout=10&tcp_nodelay=true"
+            expiration_sec: 500
+        "#;
+
+        let config: MemcacheBackendConfig =
+            serde_yaml::from_str(yaml).expect("Failed to deserialize Memcache config");
+        assert_eq!(config.tag, "memcache-1");
+        assert_eq!(
+            config.connection_string,
+            "memcache://127.0.0.1:12345?timeout=10&tcp_nodelay=true"
+        );
+        assert_eq!(config.expiration_sec, Some(500));
+    }
 
     #[test]
     fn connection_string_parse_works() {

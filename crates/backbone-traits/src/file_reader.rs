@@ -10,13 +10,9 @@ use tokio::time::Instant;
 
 pub trait FileReaderTrait: AsyncRead + Send + Unpin {
     fn summary(&self) -> &Option<Arc<WriteSummary>>;
-
     fn expiration_date(&self) -> Instant;
-
     fn file_size(&self) -> FileSize;
-
     fn file_age(&self) -> Duration;
-
     fn content_type(&self) -> Option<Cow<str>>;
 }
 
@@ -26,19 +22,15 @@ impl FileReaderTrait for BoxedFileReader {
     fn summary(&self) -> &Option<Arc<WriteSummary>> {
         self.0.summary()
     }
-
     fn expiration_date(&self) -> Instant {
         self.0.expiration_date()
     }
-
     fn file_size(&self) -> FileSize {
         self.0.file_size()
     }
-
     fn file_age(&self) -> Duration {
         self.0.file_age()
     }
-
     fn content_type(&self) -> Option<Cow<str>> {
         self.0.content_type()
     }
@@ -55,7 +47,7 @@ impl AsyncRead for BoxedFileReader {
 }
 
 impl BoxedFileReader {
-    pub fn from<T>(value: T) -> Self
+    pub fn new<T>(value: T) -> Self
     where
         T: FileReaderTrait + 'static,
     {

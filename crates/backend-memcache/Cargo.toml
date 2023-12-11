@@ -1,0 +1,25 @@
+[package]
+name = "backend-memcache"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+app-config = { version = "0.1.0", path = "../app-config", features = ["memcache"] }
+async-trait = "0.1.74"
+backbone-traits = { version = "0.1.0", path = "../backbone-traits" }
+backend-traits = { version = "0.1.0", path = "../backend-traits" }
+file_distribution = { version = "0.1.0", path = "../file_distribution" }
+map-ok = "0.1.0"
+memcache = "0.17.1"
+r2d2 = "0.8.10"
+r2d2-memcache = "0.6.0"
+serde = { version = "1.0.193", features = ["derive"] }
+shortguid = "0.6.0"
+thiserror = "1.0.50"
+tokio = { version = "1.35.0", default-features = false, features = ["rt"] }
+tokio-util = "0.7.10"
+tracing = "0.1.40"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

@@ -3,10 +3,8 @@
 // the `docsrs` configuration attribute is defined
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-use crate::app_config::{load_config, AppConfig};
-use crate::backends::memcache::MemcacheBackend;
-use crate::backends::BackendRegistry;
 use crate::handlers::*;
+use app_config::{load_config, AppConfig};
 use axum::Router;
 use backbone::{Backbone, FileAccessorBridge};
 use clap::ArgMatches;
@@ -22,13 +20,15 @@ use tokio::sync::broadcast;
 use tower::ServiceBuilder;
 use tracing::{debug, error, info, warn};
 
-mod app_config;
-mod backends;
+use crate::backend_registry::BackendRegistry;
+#[cfg(feature = "memcache")]
+use backend_memcache::MemcacheBackend;
+
+mod backend_registry;
 mod commands;
 mod handlers;
 mod health;
 mod logging;
-mod protobuf;
 mod services;
 
 #[derive(Clone)]

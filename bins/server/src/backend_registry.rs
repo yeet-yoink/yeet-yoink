@@ -1,9 +1,11 @@
-use crate::app_config::AppConfig;
+use app_config::AppConfig;
 use backbone_traits::FileAccessor;
-use backend_traits::{BackendCommand, BackendCommandSender, DynBackend};
+use backend_traits::{
+    BackendCommand, BackendCommandSender, BackendRegistration, DynBackend, RegisterBackendError,
+    TryCreateFromConfig,
+};
 use rendezvous::RendezvousGuard;
 use std::cell::Cell;
-use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -93,6 +95,16 @@ pub struct BackendRegistryBuilder {
     file_accessor: Arc<dyn FileAccessor>,
 }
 
+impl BackendRegistration for BackendRegistryBuilder {
+    fn add_backends<T>(self, config: &AppConfig) -> Result<(), RegisterBackendError>
+    where
+        T: TryCreateFromConfig,
+    {
+        self.add_backends::<T>(config)?;
+        Ok(())
+    }
+}
+
 impl BackendRegistryBuilder {
     fn new(cleanup_rendezvous: RendezvousGuard, file_accessor: Arc<dyn FileAccessor>) -> Self {
         Self {
@@ -176,39 +188,4 @@ impl BackendRegistryBuilder {
         self.backends.extend(backends.into_iter());
         self
     }
-}
-
-pub trait BackendInfo {
-    /// Gets a short name of the backend.
-    fn backend_name() -> &'static str;
-
-    /// Gets an informational string about the backend.
-    fn backend_version() -> &'static str {
-        ""
-    }
-}
-
-pub trait TryCreateFromConfig: BackendInfo
-where
-    Self::Error: Error + 'static,
-{
-    type Error;
-
-    fn try_from_config(config: &AppConfig) -> Result<Vec<DynBackend>, Self::Error>;
-
-    fn register(
-        registry: BackendRegistryBuilder,
-        config: &AppConfig,
-    ) -> Result<BackendRegistryBuilder, RegisterBackendError>
-    where
-        Self: Sized,
-    {
-        registry.add_backends::<Self>(config)
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum RegisterBackendError {
-    #[error(transparent)]
-    TryCreateFromConfig(Box<dyn Error>),
 }

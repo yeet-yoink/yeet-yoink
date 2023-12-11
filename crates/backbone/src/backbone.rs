@@ -118,13 +118,14 @@ impl Backbone {
             None => Err(GetFileReaderError::UnknownFile(id)),
             Some(file) => {
                 let reader = file.get_reader().await?;
-                Ok(BoxedFileReader::from(FileReader::new(
+                let reader = FileReader::new(
                     reader,
                     file.content_type.clone(),
                     file.created,
                     file.expiration_duration,
                     file.get_summary().await,
-                )))
+                );
+                Ok(BoxedFileReader::new(reader))
             }
         }
     }
