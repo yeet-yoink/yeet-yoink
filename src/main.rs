@@ -29,6 +29,7 @@ mod commands;
 mod handlers;
 mod health;
 mod logging;
+mod messages;
 mod metrics;
 mod services;
 

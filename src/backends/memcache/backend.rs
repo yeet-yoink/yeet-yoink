@@ -6,6 +6,7 @@ use crate::backends::registry::BackendInfo;
 use crate::backends::{
     Backend, BoxOkIter, DistributionError, DynBackend, MapOkIter, TryCreateFromConfig,
 };
+use crate::messages::ItemMetadata;
 use axum::async_trait;
 use r2d2::Pool;
 use r2d2_memcache::memcache::{MemcacheError, ToMemcacheValue};
@@ -66,6 +67,11 @@ impl Backend for MemcacheBackend {
         let file = file_accessor.get_file(id).await?;
         let client = self.pool.get().unwrap();
 
+        let metadata = ItemMetadata::new(id, &summary);
+        let metadata_buf = metadata
+            .serialize_to_proto()
+            .map_err(|e| DistributionError::BackendSpecific(Box::new(e)))?;
+
         let result: Result<(), MemcacheError> = spawn_blocking(move || {
             let file = StreamWrapper::new(summary, file);
 
@@ -73,7 +79,9 @@ impl Backend for MemcacheBackend {
             client.set(&key, file, expiration)?;
             trace!("Stored data under key {key} with expiration {expiration}");
 
-            // TODO: Write item metadata.
+            let key = format!("meta-{}", id);
+            client.set(&key, metadata_buf.as_ref(), expiration)?;
+            trace!("Stored metadata under key {key} with expiration {expiration}");
 
             Ok(())
         })

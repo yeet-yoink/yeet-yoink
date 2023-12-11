@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package types;
+
+message ItemMetadata {
+  bytes id = 1;
+  optional string file_name = 2;
+  Hashes hashes = 3;
+  // TODO: Add creation timestamp
+}
+
+message Hashes {
+  bytes md5 = 1;
+  bytes sha256 = 2;
+}

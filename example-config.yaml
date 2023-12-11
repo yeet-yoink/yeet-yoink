@@ -4,3 +4,4 @@ backends:
   memcache:
     - tag: "memcache-1"
       connection_string: "memcache://127.0.0.1:11211?timeout=10&tcp_nodelay=true"
+      expiration_sec: 500

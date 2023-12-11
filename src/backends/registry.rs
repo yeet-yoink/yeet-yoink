@@ -1,5 +1,5 @@
 use crate::app_config::AppConfig;
-use crate::backbone::{FileAccessor, FileAccessorBridge, WriteSummary};
+use crate::backbone::{FileAccessor, WriteSummary};
 use crate::backends::DynBackend;
 use rendezvous::RendezvousGuard;
 use shortguid::ShortGuid;

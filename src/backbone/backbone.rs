@@ -5,7 +5,6 @@ use crate::backbone::file_writer_guard::FileWriterGuard;
 use crate::backbone::WriteSummary;
 use crate::backends::{BackendCommand, BackendRegistry};
 use async_tempfile::TempFile;
-use axum::async_trait;
 use axum::headers::ContentType;
 use axum::response::{IntoResponse, Response};
 use hyper::StatusCode;
