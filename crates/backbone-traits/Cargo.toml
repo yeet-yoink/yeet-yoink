@@ -1,0 +1,15 @@
+[package]
+name = "backbone-traits"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-tempfile = "0.5.0"
+async-trait = "0.1.74"
+file_distribution = { version = "0.1.0", path = "../file_distribution" }
+shared-files = "0.1.0"
+shortguid = "0.6.0"
+thiserror = "1.0.50"
+tokio = { version = "1.35.0", default-features = false, features = ["time"] }

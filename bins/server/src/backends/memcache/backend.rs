@@ -1,11 +1,12 @@
 use crate::app_config::AppConfig;
-use crate::backbone::{FileAccessor, FileReader};
 use crate::backends::memcache::config::DEFAULT_EXPIRATION;
 use crate::backends::memcache::MemcacheBackendConfig;
 use crate::backends::registry::BackendInfo;
-use crate::backends::{Backend, DistributionError, DynBackend, TryCreateFromConfig};
+use crate::backends::TryCreateFromConfig;
 use crate::protobuf::ItemMetadata;
 use axum::async_trait;
+use backbone_traits::{BoxedFileReader, FileAccessor};
+use backend_traits::{Backend, DistributionError, DynBackend};
 use file_distribution::WriteSummary;
 use map_ok::{BoxOk, MapOk};
 use r2d2::Pool;
@@ -98,11 +99,11 @@ impl Backend for MemcacheBackend {
 
 struct StreamWrapper {
     summary: Arc<WriteSummary>,
-    bridge: Cell<Option<SyncIoBridge<FileReader>>>,
+    bridge: Cell<Option<SyncIoBridge<BoxedFileReader>>>,
 }
 
 impl StreamWrapper {
-    pub fn new(summary: Arc<WriteSummary>, reader: FileReader) -> StreamWrapper {
+    pub fn new(summary: Arc<WriteSummary>, reader: BoxedFileReader) -> StreamWrapper {
         Self {
             summary,
             bridge: Cell::new(Some(SyncIoBridge::new(reader))),

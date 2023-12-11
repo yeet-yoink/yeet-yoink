@@ -1,11 +1,12 @@
-use crate::backbone::file_reader::FileReader;
-use crate::backbone::file_record::{FileRecord, GetReaderError};
-use crate::backbone::file_writer::FileWriter;
-use crate::backbone::file_writer_guard::FileWriterGuard;
-use crate::backends::{BackendCommand, BackendRegistry};
+use crate::file_reader::FileReader;
+use crate::file_record::FileRecord;
+use crate::file_writer::FileWriter;
+use crate::file_writer_guard::FileWriterGuard;
 use async_tempfile::TempFile;
 use axum::headers::ContentType;
 use axum::response::{IntoResponse, Response};
+use backbone_traits::{BoxedFileReader, GetFileReaderError};
+use backend_traits::{BackendCommand, BackendCommandSender};
 use file_distribution::WriteSummary;
 use hyper::StatusCode;
 use rendezvous::RendezvousGuard;
@@ -30,7 +31,6 @@ pub const TEMPORAL_LEASE: Duration = Duration::from_secs(5 * 60);
 pub struct Backbone {
     inner: Arc<RwLock<Inner>>,
     sender: Sender<BackboneCommand>,
-    registry: BackendRegistry,
     loop_handle: JoinHandle<()>,
 }
 
@@ -39,15 +39,11 @@ struct Inner {
 }
 
 impl Backbone {
-    pub fn new(mut registry: BackendRegistry, cleanup_rendezvous: RendezvousGuard) -> Self {
+    pub fn new(backend_sender: BackendCommandSender, cleanup_rendezvous: RendezvousGuard) -> Self {
         let (sender, receiver) = mpsc::channel(1024);
         let inner = Arc::new(RwLock::new(Inner {
             open: HashMap::default(),
         }));
-
-        let backend_sender = registry
-            .get_sender()
-            .expect("Failed to obtain the sender from the registry");
 
         let loop_handle = tokio::spawn(Self::command_loop(
             inner.clone(),
@@ -58,14 +54,12 @@ impl Backbone {
         Self {
             inner,
             sender,
-            registry,
             loop_handle,
         }
     }
 
     pub async fn join(self) {
         self.loop_handle.await.ok();
-        self.registry.join().await.ok();
     }
 
     /// Creates a new file buffer, registers it and returns a writer to it.
@@ -118,19 +112,19 @@ impl Backbone {
     }
 
     /// Creates a new file buffer, registers it and returns a writer to it.
-    pub async fn get_file(&self, id: ShortGuid) -> Result<FileReader, GetReaderError> {
+    pub async fn get_file(&self, id: ShortGuid) -> Result<BoxedFileReader, GetFileReaderError> {
         let inner = self.inner.read().await;
         match inner.open.get(&id) {
-            None => Err(GetReaderError::UnknownFile(id)),
+            None => Err(GetFileReaderError::UnknownFile(id)),
             Some(file) => {
                 let reader = file.get_reader().await?;
-                Ok(FileReader::new(
+                Ok(BoxedFileReader::from(FileReader::new(
                     reader,
                     file.content_type.clone(),
                     file.created,
                     file.expiration_duration,
                     file.get_summary().await,
-                ))
+                )))
             }
         }
     }
@@ -153,7 +147,7 @@ impl Backbone {
     async fn command_loop(
         inner: Arc<RwLock<Inner>>,
         mut channel: mpsc::Receiver<BackboneCommand>,
-        backend_sender: Sender<BackendCommand>,
+        backend_sender: BackendCommandSender,
         cleanup_rendezvous: RendezvousGuard,
     ) {
         while let Some(command) = channel.recv().await {

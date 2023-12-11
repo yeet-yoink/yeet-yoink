@@ -37,13 +37,21 @@ struct InFlightLabels {
 /// The HTTP method to track.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum HttpMethod {
+    /// See [`Method::OPTIONS`].
     Options,
+    /// See [`Method::GET`].
     Get,
+    /// See [`Method::POST`].
     Post,
+    /// See [`Method::PUT`].
     Put,
+    /// See [`Method::DELETE`].
     Delete,
+    /// See [`Method::HEAD`].
     Head,
+    /// See [`Method::PATCH`].
     Patch,
+    /// Any other [`Method`].
     Unhandled(Method),
 }
 
@@ -120,12 +128,11 @@ pub struct HttpMetrics;
 
 impl HttpMetrics {
     /// Tracks one call to the specified HTTP path and method.
-    pub fn track<P: AsRef<str>, M: Into<HttpMethod>>(
-        path: P,
-        method: M,
-        status: u16,
-        elapsed: Duration,
-    ) {
+    pub fn track<P, M>(path: P, method: M, status: u16, elapsed: Duration)
+    where
+        P: AsRef<str>,
+        M: Into<HttpMethod>,
+    {
         let method = method.into();
         TRACK_ENDPOINT
             .get_or_create(&Labels {

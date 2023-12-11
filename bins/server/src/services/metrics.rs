@@ -2,11 +2,11 @@ use hyper::service::Service;
 use hyper::{Request, StatusCode, Version};
 use pin_project::pin_project;
 
-use crate::metrics::http::HttpMetrics;
 use axum::body::BoxBody;
 use axum::http::Response;
 use axum::response::IntoResponse;
 use hyper::body::HttpBody;
+use metrics::http::HttpMetrics;
 use std::cell::Cell;
 use std::future::Future;
 use std::pin::Pin;

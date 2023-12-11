@@ -1,6 +1,7 @@
-use crate::metrics::transfer::{TransferMethod, TransferMetrics};
 use axum::headers::ContentType;
+use backbone_traits::FileReaderTrait;
 use file_distribution::WriteSummary;
+use metrics::transfer::{TransferMethod, TransferMetrics};
 use shared_files::{FileSize, SharedTemporaryFileReader};
 use std::borrow::Cow;
 use std::pin::Pin;
@@ -57,6 +58,28 @@ impl FileReader {
         self.content_type
             .as_ref()
             .map(|content_type| Cow::from(content_type.as_str()))
+    }
+}
+
+impl FileReaderTrait for FileReader {
+    fn summary(&self) -> &Option<Arc<WriteSummary>> {
+        self.summary()
+    }
+
+    fn expiration_date(&self) -> Instant {
+        self.expiration_date()
+    }
+
+    fn file_size(&self) -> FileSize {
+        self.file_size()
+    }
+
+    fn file_age(&self) -> Duration {
+        self.file_age()
+    }
+
+    fn content_type(&self) -> Option<Cow<str>> {
+        self.content_type()
     }
 }
 

@@ -1,0 +1,21 @@
+[package]
+name = "backbone"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-tempfile = { version = "0.5.0", features = ["uuid"] }
+axum = { version = "0.6", default-features = false, features = ["headers"] }
+backbone-traits = { version = "0.1.0", path = "../backbone-traits" }
+backend-traits = { version = "0.1.0", path = "../backend-traits" }
+file_distribution = { path = "../file_distribution" }
+hex = "0.4.3"
+hyper = "0.14.27"
+metrics = { path = "../metrics" }
+problemdetails = { version = "0.2.1", features = ["axum"] }
+rendezvous = "0.2.2"
+shared-files = "0.1.0"
+shortguid = "0.6.0"
+thiserror = "1.0.50"
+tokio = { version = "1.35.0", features = ["io-std", "time"] }
+tracing = "0.1.40"

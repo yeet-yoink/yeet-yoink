@@ -203,6 +203,52 @@ dependencies = [
 ]
 
 [[package]]
+name = "backbone"
+version = "0.1.0"
+dependencies = [
+ "async-tempfile",
+ "axum",
+ "backbone-traits",
+ "backend-traits",
+ "file_distribution",
+ "hex",
+ "hyper",
+ "metrics",
+ "problemdetails",
+ "rendezvous",
+ "shared-files",
+ "shortguid",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "backbone-traits"
+version = "0.1.0"
+dependencies = [
+ "async-tempfile",
+ "async-trait",
+ "file_distribution",
+ "shared-files",
+ "shortguid",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "backend-traits"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "backbone-traits",
+ "file_distribution",
+ "shortguid",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "backtrace"
 version = "0.3.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1106,6 +1152,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a634b1c61a95585bd15607c6ab0c4e5b226e695ff2800ba0cdccddf208c406c"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "metrics"
+version = "0.1.0"
+dependencies = [
+ "hyper",
+ "lazy_static",
+ "prometheus-client",
 ]
 
 [[package]]
@@ -2673,6 +2728,9 @@ dependencies = [
  "anyhow",
  "async-tempfile",
  "axum",
+ "backbone",
+ "backbone-traits",
+ "backend-traits",
  "base64 0.21.5",
  "bytes",
  "chrono",
@@ -2692,6 +2750,7 @@ dependencies = [
  "map-ok",
  "md5",
  "memcache 0.17.1",
+ "metrics",
  "mime-db",
  "percent-encoding",
  "pin-project",

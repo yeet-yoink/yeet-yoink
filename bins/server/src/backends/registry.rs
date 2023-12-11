@@ -1,9 +1,8 @@
 use crate::app_config::AppConfig;
-use crate::backbone::FileAccessor;
-use crate::backends::DynBackend;
-use file_distribution::WriteSummary;
+use backbone_traits::FileAccessor;
+use backend_traits::{BackendCommand, BackendCommandSender, DynBackend};
 use rendezvous::RendezvousGuard;
-use shortguid::ShortGuid;
+use std::cell::Cell;
 use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -15,13 +14,13 @@ const EVENT_BUFFER_SIZE: usize = 64;
 
 pub struct BackendRegistry {
     handle: JoinHandle<()>,
-    sender: Option<Sender<BackendCommand>>,
+    sender: Cell<Option<Sender<BackendCommand>>>,
 }
 
 impl BackendRegistry {
     pub fn builder(
         cleanup_rendezvous: RendezvousGuard,
-        file_accessor: Arc<dyn FileAccessor>,
+        file_accessor: Arc<dyn FileAccessor>, // TODO: Refactor Arc<dyn FileAccessor> into DynFileAccessor
     ) -> BackendRegistryBuilder {
         BackendRegistryBuilder::new(cleanup_rendezvous, file_accessor)
     }
@@ -40,12 +39,12 @@ impl BackendRegistry {
         ));
         Self {
             handle,
-            sender: Some(sender),
+            sender: Cell::new(Some(sender)),
         }
     }
 
-    pub(crate) fn get_sender(&mut self) -> Option<Sender<BackendCommand>> {
-        self.sender.take()
+    pub(crate) fn get_sender(&self) -> Option<BackendCommandSender> {
+        self.sender.take().map(BackendCommandSender::from)
     }
 
     pub async fn join(self) -> Result<(), JoinError> {
@@ -212,8 +211,4 @@ where
 pub enum RegisterBackendError {
     #[error(transparent)]
     TryCreateFromConfig(Box<dyn Error>),
-}
-
-pub enum BackendCommand {
-    DistributeFile(ShortGuid, Arc<WriteSummary>),
 }

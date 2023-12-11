@@ -1,15 +1,10 @@
-use crate::backbone::file_reader::FileReader;
-use crate::backbone::{Backbone, GetReaderError};
+use crate::Backbone;
 use axum::async_trait;
+use backbone_traits::{BoxedFileReader, FileAccessor, FileAccessorError};
 use shortguid::ShortGuid;
 use std::borrow::Borrow;
 use std::sync::{Arc, RwLock, Weak};
 use tracing::trace;
-
-#[async_trait]
-pub trait FileAccessor: Sync + Send {
-    async fn get_file(&self, id: ShortGuid) -> Result<FileReader, FileAccessorError>;
-}
 
 #[derive(Default)]
 pub struct FileAccessorBridge {
@@ -41,7 +36,7 @@ impl FileAccessorBridge {
 
 #[async_trait]
 impl FileAccessor for FileAccessorBridge {
-    async fn get_file(&self, id: ShortGuid) -> Result<FileReader, FileAccessorError> {
+    async fn get_file(&self, id: ShortGuid) -> Result<BoxedFileReader, FileAccessorError> {
         match self.get_backbone() {
             Ok(backbone) => Ok(backbone.get_file(id).await?),
             Err(GetBackboneError::BackboneUnavailable) => {
@@ -53,19 +48,9 @@ impl FileAccessor for FileAccessorBridge {
 }
 
 #[derive(Debug, thiserror::Error)]
-enum GetBackboneError {
+pub enum GetBackboneError {
     #[error("The backbone is unavailable")]
     BackboneUnavailable,
     #[error("Unable to obtain a lock on a mutex")]
     FailedToLock,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum FileAccessorError {
-    #[error("The backbone is unavailable")]
-    BackboneUnavailable,
-    #[error("Unable to obtain a lock on a mutex")]
-    FailedToLock,
-    #[error(transparent)]
-    GetReaderError(#[from] GetReaderError),
 }

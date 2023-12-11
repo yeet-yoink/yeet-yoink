@@ -1,6 +1,7 @@
-use crate::backbone::backbone::BackboneCommand;
-use crate::backbone::file_writer_guard::WriteResult;
+use crate::backbone::BackboneCommand;
+use crate::file_writer_guard::WriteResult;
 use axum::headers::ContentType;
+use backbone_traits::GetFileReaderError;
 use file_distribution::WriteSummary;
 use shared_files::{SharedTemporaryFile, SharedTemporaryFileReader};
 use shortguid::ShortGuid;
@@ -62,14 +63,14 @@ impl FileRecord {
     }
 
     /// Gets an additional reader for the file.
-    pub async fn get_reader(&self) -> Result<SharedTemporaryFileReader, GetReaderError> {
+    pub async fn get_reader(&self) -> Result<SharedTemporaryFileReader, GetFileReaderError> {
         let inner = self.inner.read().await;
         match &inner.file {
-            None => Err(GetReaderError::FileExpired(self.id)),
+            None => Err(GetFileReaderError::FileExpired(self.id)),
             Some(file) => Ok(file
                 .reader()
                 .await
-                .map_err(|e| GetReaderError::FileError(self.id, e))?),
+                .map_err(|e| GetFileReaderError::FileError(self.id, e))?),
         }
     }
 
@@ -158,14 +159,4 @@ impl FileRecord {
             warn!(file_id = %id, "The backbone writer channel was closed while indicating a termination for file with ID {id}: {error}");
         }
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum GetReaderError {
-    #[error("No file found for the specified ID {0}")]
-    UnknownFile(ShortGuid),
-    #[error("The file lease has expired for the specified ID {0}")]
-    FileExpired(ShortGuid),
-    #[error("Failed to open the file for ID {0}: {1}")]
-    FileError(ShortGuid, async_tempfile::Error),
 }

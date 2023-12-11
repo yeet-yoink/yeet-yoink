@@ -1,8 +1,6 @@
 //! Contains the `/yoink` endpoint filter.
 
-use crate::backbone::GetReaderError;
 use crate::expiration_as_rfc1123;
-use crate::metrics::transfer::{TransferMethod, TransferMetrics};
 use crate::AppState;
 use axum::body::{HttpBody, StreamBody};
 use axum::extract::{Path, State};
@@ -10,8 +8,10 @@ use axum::http::{header, HeaderName};
 use axum::response::{AppendHeaders, IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
+use backbone_traits::{FileReaderTrait, GetFileReaderError};
 use base64::Engine;
 use hyper::StatusCode;
+use metrics::transfer::{TransferMethod, TransferMetrics};
 use mime_db::extension;
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use shared_files::FileSize;
@@ -65,7 +65,7 @@ async fn do_yoink(
 ) -> Result<Response, StatusCode> {
     let file = match state.backbone.get_file(id).await {
         Ok(file) => file,
-        Err(e) => return Ok(e.into()),
+        Err(e) => return Ok(map_file_reader_error_to_response(e)),
     };
 
     TransferMetrics::track_transfer(TransferMethod::Fetch);
@@ -182,30 +182,28 @@ where
     }
 }
 
-impl From<GetReaderError> for Response {
-    fn from(value: GetReaderError) -> Self {
-        match value {
-            GetReaderError::UnknownFile(id) => problemdetails::new(StatusCode::NOT_FOUND)
+fn map_file_reader_error_to_response(value: GetFileReaderError) -> Response {
+    match value {
+        GetFileReaderError::UnknownFile(id) => problemdetails::new(StatusCode::NOT_FOUND)
+            .with_title("File not found")
+            .with_detail(format!("The file with ID {id} could not be found"))
+            .with_instance(format!("/yoink/{id}"))
+            .with_value("id", id.to_string())
+            .into_response(),
+        GetFileReaderError::FileExpired(id) => problemdetails::new(StatusCode::GONE)
+            .with_title("File not found")
+            .with_detail(format!("The file with ID {id} has expired"))
+            .with_instance(format!("/yoink/{id}"))
+            .with_value("id", id.to_string())
+            .into_response(),
+        GetFileReaderError::FileError(id, e) => {
+            problemdetails::new(StatusCode::INTERNAL_SERVER_ERROR)
                 .with_title("File not found")
-                .with_detail(format!("The file with ID {id} could not be found"))
+                .with_detail(format!("Unable to process file: {e}"))
                 .with_instance(format!("/yoink/{id}"))
                 .with_value("id", id.to_string())
-                .into_response(),
-            GetReaderError::FileExpired(id) => problemdetails::new(StatusCode::GONE)
-                .with_title("File not found")
-                .with_detail(format!("The file with ID {id} has expired"))
-                .with_instance(format!("/yoink/{id}"))
-                .with_value("id", id.to_string())
-                .into_response(),
-            GetReaderError::FileError(id, e) => {
-                problemdetails::new(StatusCode::INTERNAL_SERVER_ERROR)
-                    .with_title("File not found")
-                    .with_detail(format!("Unable to process file: {e}"))
-                    .with_instance(format!("/yoink/{id}"))
-                    .with_value("id", id.to_string())
-                    .with_value("error", e.to_string())
-                    .into_response()
-            }
+                .with_value("error", e.to_string())
+                .into_response()
         }
     }
 }

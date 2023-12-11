@@ -1,9 +1,9 @@
 //! Contains the `/metrics` endpoint filter.
 
-use crate::metrics::Metrics;
 use axum::body::HttpBody;
 use axum::routing::get;
 use axum::Router;
+use metrics::Metrics;
 
 pub trait MetricsRoutes {
     /// Provides an API for Prometheus/OpenMetrics metrics.

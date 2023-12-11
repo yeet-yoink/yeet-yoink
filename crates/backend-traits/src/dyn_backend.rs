@@ -1,4 +1,4 @@
-use crate::backends::Backend;
+use crate::Backend;
 use std::ops::Deref;
 
 /// `DynBackend` is a wrapper struct that holds a boxed trait object,
@@ -7,6 +7,8 @@ use std::ops::Deref;
 /// # Example
 ///
 /// ```
+/// use backend_traits::DynBackend;
+///
 /// trait Backend {
 ///     fn execute(&self, query: &str) -> String;
 /// }

@@ -4,11 +4,11 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 use crate::app_config::{load_config, AppConfig};
-use crate::backbone::{Backbone, FileAccessorBridge};
 use crate::backends::memcache::MemcacheBackend;
 use crate::backends::BackendRegistry;
 use crate::handlers::*;
 use axum::Router;
+use backbone::{Backbone, FileAccessorBridge};
 use clap::ArgMatches;
 use directories::ProjectDirs;
 use futures::stream::FuturesUnordered;
@@ -23,13 +23,11 @@ use tower::ServiceBuilder;
 use tracing::{debug, error, info, warn};
 
 mod app_config;
-mod backbone;
 mod backends;
 mod commands;
 mod handlers;
 mod health;
 mod logging;
-mod metrics;
 mod protobuf;
 mod services;
 
@@ -83,7 +81,10 @@ async fn main() -> ExitCode {
         Err(_) => return ExitCode::FAILURE,
     };
 
-    let backbone = Arc::new(Backbone::new(registry.build(), rendezvous.fork_guard()));
+    let registry = registry.build();
+    let backend_sender = registry.get_sender().expect("failed to get backend sender");
+
+    let backbone = Arc::new(Backbone::new(backend_sender, rendezvous.fork_guard()));
     file_accessor.set_backbone(&backbone);
 
     // The application state is shared with the Axum servers.
