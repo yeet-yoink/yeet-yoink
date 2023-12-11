@@ -33,6 +33,7 @@ headers-content-md5 = "0.1.1"
 hex = "0.4.3"
 hyper = { version = "0.14.27", features = ["http1", "http2", "server", "h2"] }
 lazy_static = "1.4.0"
+map-ok = "0.1.0"
 md5 = "0.7.0"
 memcache = { version = "0.17.1", optional = true }
 mime-db = "1.7.0"

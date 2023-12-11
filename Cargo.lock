@@ -1029,6 +1029,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5e6163cb8c49088c2c36f57875e58ccd8c87c7427f7fbd50ea6710b2f3f2e8f"
 
 [[package]]
+name = "map-ok"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04e700ef76907db3c41cc6b58563309331837c1b0a76524585c4f1f943c0e12e"
+
+[[package]]
 name = "matchers"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2672,6 +2678,7 @@ dependencies = [
  "hex",
  "hyper",
  "lazy_static",
+ "map-ok",
  "md5",
  "memcache 0.17.1",
  "mime-db",
