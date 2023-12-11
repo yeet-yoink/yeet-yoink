@@ -1,4 +1,4 @@
-use crate::{TryCreateFromConfig};
+use crate::TryCreateFromConfig;
 use app_config::AppConfig;
 use std::error::Error;
 
