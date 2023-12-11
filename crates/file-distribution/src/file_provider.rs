@@ -4,14 +4,15 @@ use shortguid::ShortGuid;
 use std::borrow::Borrow;
 use std::sync::Arc;
 
+/// A wrapper around a dynamically dispatched [`GetFile`].
+#[derive(Clone)]
+pub struct FileProvider(Arc<dyn GetFile>);
+
+/// Trait for registries that provide access to files by their identifier.
 #[async_trait]
-pub trait FileAccessor: Sync + Send {
+pub trait GetFile: Sync + Send {
     async fn get_file(&self, id: ShortGuid) -> Result<BoxedFileReader, FileAccessorError>;
 }
-
-/// A wrapper around a dynamically dispatched [`FileAccessor`].
-#[derive(Clone)]
-pub struct DynFileAccessor(Arc<dyn FileAccessor>);
 
 #[derive(Debug, thiserror::Error)]
 pub enum FileAccessorError {
@@ -33,20 +34,20 @@ pub enum GetFileReaderError {
     FileError(ShortGuid, async_tempfile::Error),
 }
 
-impl DynFileAccessor {
-    /// Constructs a [`DynFileAccessor`] from an [`Arc`] containing a [`FileAccessor`] instance
+impl FileProvider {
+    /// Constructs a [`FileProvider`] from an [`Arc`] containing a [`GetFile`] instance
     /// by cloning the [`Arc`].
     pub fn wrap<B, T>(accessor: B) -> Self
     where
         B: Borrow<Arc<T>>,
-        T: FileAccessor + 'static,
+        T: GetFile + 'static,
     {
         Self(accessor.borrow().clone())
     }
 }
 
 #[async_trait]
-impl FileAccessor for DynFileAccessor {
+impl GetFile for FileProvider {
     async fn get_file(&self, id: ShortGuid) -> Result<BoxedFileReader, FileAccessorError> {
         self.0.get_file(id).await
     }

@@ -23,7 +23,7 @@ use tracing::{debug, error, info, warn};
 use crate::backend_registry::BackendRegistry;
 #[cfg(feature = "memcache")]
 use backend_memcache::MemcacheBackend;
-use file_distribution::DynFileAccessor;
+use file_distribution::FileProvider;
 
 mod backend_registry;
 mod commands;
@@ -71,10 +71,8 @@ async fn main() -> ExitCode {
     let file_accessor = Arc::new(FileAccessorBridge::default());
 
     // TODO: Create and register backends.
-    let registry = BackendRegistry::builder(
-        rendezvous.fork_guard(),
-        DynFileAccessor::wrap(&file_accessor),
-    );
+    let registry =
+        BackendRegistry::builder(rendezvous.fork_guard(), FileProvider::wrap(&file_accessor));
 
     // TODO: This currently blocks if the Memcached instance is unavailable.
     //       We would prefer a solution where we can gracefully react to this in order to

@@ -3,10 +3,9 @@ use backend_traits::{
     BackendCommand, BackendCommandSender, BackendRegistration, DynBackend, RegisterBackendError,
     TryCreateFromConfig,
 };
-use file_distribution::{DynFileAccessor, FileAccessor};
+use file_distribution::FileProvider;
 use rendezvous::RendezvousGuard;
 use std::cell::Cell;
-use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::{JoinError, JoinHandle};
@@ -22,7 +21,7 @@ pub struct BackendRegistry {
 impl BackendRegistry {
     pub fn builder(
         cleanup_rendezvous: RendezvousGuard,
-        file_accessor: DynFileAccessor,
+        file_accessor: FileProvider,
     ) -> BackendRegistryBuilder {
         BackendRegistryBuilder::new(cleanup_rendezvous, file_accessor)
     }
@@ -30,7 +29,7 @@ impl BackendRegistry {
     fn new(
         cleanup_rendezvous: RendezvousGuard,
         backends: Vec<DynBackend>,
-        file_accessor: DynFileAccessor,
+        file_accessor: FileProvider,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(EVENT_BUFFER_SIZE);
         let handle = tokio::spawn(Self::handle_events(
@@ -57,7 +56,7 @@ impl BackendRegistry {
         backends: Vec<DynBackend>,
         mut receiver: Receiver<BackendCommand>,
         cleanup_rendezvous: RendezvousGuard,
-        file_accessor: DynFileAccessor,
+        file_accessor: FileProvider,
     ) {
         while let Some(event) = receiver.recv().await {
             match event {
@@ -92,7 +91,7 @@ impl BackendRegistry {
 pub struct BackendRegistryBuilder {
     backends: Vec<DynBackend>,
     cleanup_rendezvous: RendezvousGuard,
-    file_accessor: DynFileAccessor,
+    file_accessor: FileProvider,
 }
 
 impl BackendRegistration for BackendRegistryBuilder {
@@ -106,7 +105,7 @@ impl BackendRegistration for BackendRegistryBuilder {
 }
 
 impl BackendRegistryBuilder {
-    fn new(cleanup_rendezvous: RendezvousGuard, file_accessor: DynFileAccessor) -> Self {
+    fn new(cleanup_rendezvous: RendezvousGuard, file_accessor: FileProvider) -> Self {
         Self {
             backends: Vec::default(),
             cleanup_rendezvous,

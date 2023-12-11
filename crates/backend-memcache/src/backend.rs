@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use backend_traits::{Backend, DistributionError, DynBackend};
 use backend_traits::{BackendInfo, TryCreateFromConfig};
 use file_distribution::protobuf::ItemMetadata;
-use file_distribution::{BoxedFileReader, DynFileAccessor, FileAccessor, WriteSummary};
+use file_distribution::{BoxedFileReader, FileProvider, GetFile, WriteSummary};
 use map_ok::{BoxOk, MapOk};
 use r2d2::Pool;
 use r2d2_memcache::memcache::{MemcacheError, ToMemcacheValue};
@@ -64,7 +64,7 @@ impl Backend for MemcacheBackend {
         &self,
         id: ShortGuid,
         summary: Arc<WriteSummary>,
-        file_accessor: DynFileAccessor,
+        file_accessor: FileProvider,
     ) -> Result<(), DistributionError> {
         // TODO: Sanity check the file size - don't store if too large.
 

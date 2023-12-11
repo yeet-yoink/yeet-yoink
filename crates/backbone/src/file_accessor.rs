@@ -1,6 +1,6 @@
 use crate::Backbone;
 use axum::async_trait;
-use file_distribution::{BoxedFileReader, FileAccessor, FileAccessorError};
+use file_distribution::{BoxedFileReader, FileAccessorError, GetFile};
 use shortguid::ShortGuid;
 use std::borrow::Borrow;
 use std::sync::{Arc, RwLock, Weak};
@@ -35,7 +35,7 @@ impl FileAccessorBridge {
 }
 
 #[async_trait]
-impl FileAccessor for FileAccessorBridge {
+impl GetFile for FileAccessorBridge {
     async fn get_file(&self, id: ShortGuid) -> Result<BoxedFileReader, FileAccessorError> {
         match self.get_backbone() {
             Ok(backbone) => Ok(backbone.get_file(id).await?),
