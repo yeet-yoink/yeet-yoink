@@ -1,6 +1,6 @@
 use crate::Backbone;
 use axum::async_trait;
-use backbone_traits::{BoxedFileReader, FileAccessor, FileAccessorError};
+use file_distribution::{BoxedFileReader, FileAccessor, FileAccessorError};
 use shortguid::ShortGuid;
 use std::borrow::Borrow;
 use std::sync::{Arc, RwLock, Weak};

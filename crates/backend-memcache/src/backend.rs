@@ -4,11 +4,10 @@ use app_config::{
     AppConfig,
 };
 use async_trait::async_trait;
-use backbone_traits::{BoxedFileReader, FileAccessor};
 use backend_traits::{Backend, DistributionError, DynBackend};
 use backend_traits::{BackendInfo, TryCreateFromConfig};
 use file_distribution::protobuf::ItemMetadata;
-use file_distribution::WriteSummary;
+use file_distribution::{BoxedFileReader, FileAccessor, WriteSummary};
 use map_ok::{BoxOk, MapOk};
 use r2d2::Pool;
 use r2d2_memcache::memcache::{MemcacheError, ToMemcacheValue};

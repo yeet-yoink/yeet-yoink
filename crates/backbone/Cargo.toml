@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 async-tempfile = { version = "0.5.0", features = ["uuid"] }
 axum = { version = "0.6", default-features = false, features = ["headers"] }
-backbone-traits = { version = "0.1.0", path = "../backbone-traits" }
 backend-traits = { version = "0.1.0", path = "../backend-traits" }
 file-distribution = { path = "../file-distribution" }
 hex = "0.4.3"

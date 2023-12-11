@@ -1,9 +1,9 @@
 use app_config::AppConfig;
-use backbone_traits::FileAccessor;
 use backend_traits::{
     BackendCommand, BackendCommandSender, BackendRegistration, DynBackend, RegisterBackendError,
     TryCreateFromConfig,
 };
+use file_distribution::FileAccessor;
 use rendezvous::RendezvousGuard;
 use std::cell::Cell;
 use std::sync::Arc;

@@ -1,4 +1,4 @@
-use file_distribution::WriteSummary;
+use crate::WriteSummary;
 use shared_files::FileSize;
 use std::borrow::Cow;
 use std::pin::Pin;

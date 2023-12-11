@@ -1,6 +1,5 @@
 use async_trait::async_trait;
-use backbone_traits::{FileAccessor, FileAccessorError};
-use file_distribution::WriteSummary;
+use file_distribution::{FileAccessor, FileAccessorError, WriteSummary};
 use shortguid::ShortGuid;
 use std::error::Error;
 use std::sync::Arc;

@@ -223,7 +223,6 @@ version = "0.1.0"
 dependencies = [
  "async-tempfile",
  "axum",
- "backbone-traits",
  "backend-traits",
  "file-distribution",
  "hex",
@@ -239,25 +238,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "backbone-traits"
-version = "0.1.0"
-dependencies = [
- "async-tempfile",
- "async-trait",
- "file-distribution",
- "shared-files",
- "shortguid",
- "thiserror",
- "tokio",
-]
-
-[[package]]
 name = "backend-memcache"
 version = "0.1.0"
 dependencies = [
  "app-config",
  "async-trait",
- "backbone-traits",
  "backend-traits",
  "file-distribution",
  "map-ok",
@@ -278,7 +263,6 @@ version = "0.1.0"
 dependencies = [
  "app-config",
  "async-trait",
- "backbone-traits",
  "file-distribution",
  "shortguid",
  "thiserror",
@@ -652,13 +636,17 @@ checksum = "25cbce373ec4653f1a01a31e8a5e5ec0c622dc27ff9c4e6606eefef5cbbed4a5"
 name = "file-distribution"
 version = "0.1.0"
 dependencies = [
+ "async-tempfile",
+ "async-trait",
  "bytes",
  "md5",
  "prost",
  "prost-build",
  "prost-derive",
  "sha2",
+ "shared-files",
  "shortguid",
+ "thiserror",
  "tokio",
 ]
 
@@ -2743,7 +2731,6 @@ dependencies = [
  "app-config",
  "axum",
  "backbone",
- "backbone-traits",
  "backend-memcache",
  "backend-traits",
  "base64 0.21.5",

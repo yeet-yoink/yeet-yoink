@@ -1,8 +1,7 @@
 use crate::backbone::BackboneCommand;
 use crate::file_writer_guard::WriteResult;
 use axum::headers::ContentType;
-use backbone_traits::GetFileReaderError;
-use file_distribution::WriteSummary;
+use file_distribution::{GetFileReaderError, WriteSummary};
 use shared_files::{SharedTemporaryFile, SharedTemporaryFileReader};
 use shortguid::ShortGuid;
 use std::sync::Arc;

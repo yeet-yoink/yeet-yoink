@@ -1,6 +1,5 @@
 use axum::headers::ContentType;
-use backbone_traits::FileReaderTrait;
-use file_distribution::WriteSummary;
+use file_distribution::{FileReaderTrait, WriteSummary};
 use metrics::transfer::{TransferMethod, TransferMetrics};
 use shared_files::{FileSize, SharedTemporaryFileReader};
 use std::borrow::Cow;

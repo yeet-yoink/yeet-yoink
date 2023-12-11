@@ -19,7 +19,6 @@ anyhow = "1.0.75"
 app-config = { version = "0.1.0", path = "../../crates/app-config" }
 axum = { version = "0.6.20", features = ["http2", "headers", "macros", "json"] }
 backbone = { path = "../../crates/backbone" }
-backbone-traits = { path = "../../crates/backbone-traits" }
 backend-memcache = { version = "0.1.0", path = "../../crates/backend-memcache", optional = true }
 backend-traits = { version = "0.1.0", path = "../../crates/backend-traits" }
 base64 = "0.21.5"
