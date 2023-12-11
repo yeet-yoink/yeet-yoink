@@ -1,6 +1,6 @@
 //! Contains the `/yeet` endpoint filter.
 
-use crate::backbone::{CompletionMode, FileHashes};
+use crate::backbone::CompletionMode;
 use crate::expiration_as_rfc1123;
 use crate::metrics::transfer::TransferMethod;
 use crate::metrics::transfer::TransferMetrics;
@@ -12,6 +12,7 @@ use axum::http::{HeaderName, HeaderValue};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::Router;
+use file_distribution::FileHashes;
 use headers_content_md5::ContentMd5;
 use hyper::body::Buf;
 use hyper::header::EXPIRES;

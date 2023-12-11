@@ -1,6 +1,7 @@
 [workspace]
 default-members = [ "bins/server" ]
 members =[
-    "bins/*"
+    "bins/*",
+    "crates/*"
 ]
 resolver = "2"

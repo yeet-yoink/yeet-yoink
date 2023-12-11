@@ -1,6 +1,7 @@
-use crate::backbone::file_writer::{err_broken_pipe, FileWriter, FinalizationError, WriteSummary};
+use crate::backbone::file_writer::{err_broken_pipe, FileWriter, FinalizationError};
 use crate::backbone::CompletionMode;
 use crate::metrics::transfer::{TransferMethod, TransferMetrics};
+use file_distribution::WriteSummary;
 use std::io::ErrorKind;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;

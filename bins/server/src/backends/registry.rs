@@ -1,6 +1,7 @@
 use crate::app_config::AppConfig;
-use crate::backbone::{FileAccessor, WriteSummary};
+use crate::backbone::FileAccessor;
 use crate::backends::DynBackend;
+use file_distribution::WriteSummary;
 use rendezvous::RendezvousGuard;
 use shortguid::ShortGuid;
 use std::error::Error;

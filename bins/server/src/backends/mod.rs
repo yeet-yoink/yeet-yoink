@@ -1,7 +1,8 @@
-use crate::backbone::{FileAccessor, FileAccessorError, WriteSummary};
+use crate::backbone::{FileAccessor, FileAccessorError};
 pub use crate::backends::dyn_backend::DynBackend;
 pub use crate::backends::registry::{BackendCommand, BackendRegistry, TryCreateFromConfig};
 use axum::async_trait;
+use file_distribution::WriteSummary;
 use shortguid::ShortGuid;
 use std::error::Error;
 use std::sync::Arc;

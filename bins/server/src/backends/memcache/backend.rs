@@ -1,11 +1,12 @@
 use crate::app_config::AppConfig;
-use crate::backbone::{FileAccessor, FileReader, WriteSummary};
+use crate::backbone::{FileAccessor, FileReader};
 use crate::backends::memcache::config::DEFAULT_EXPIRATION;
 use crate::backends::memcache::MemcacheBackendConfig;
 use crate::backends::registry::BackendInfo;
 use crate::backends::{Backend, DistributionError, DynBackend, TryCreateFromConfig};
 use crate::protobuf::ItemMetadata;
 use axum::async_trait;
+use file_distribution::WriteSummary;
 use map_ok::{BoxOk, MapOk};
 use r2d2::Pool;
 use r2d2_memcache::memcache::{MemcacheError, ToMemcacheValue};

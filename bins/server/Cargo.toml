@@ -28,6 +28,7 @@ ctrlc = { version = "3.4.1", features = ["termination"] }
 directories = "5.0.1"
 dotenvy = "0.15.7"
 exitcode = "1.1.2"
+file_distribution = { path = "../../crates/file_distribution" }
 futures = "0.3.29"
 headers-content-md5 = "0.1.1"
 hex = "0.4.3"
@@ -59,6 +60,7 @@ tower = { version = "0.4.13", features = ["tokio"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "parking_lot", "tracing-log", "json"] }
 uuid = { version = "1.6.1", features = ["v1", "rng", "serde"] }
+
 
 [dev-dependencies]
 serde_yaml = "0.9.27"

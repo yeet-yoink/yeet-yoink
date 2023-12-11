@@ -43,3 +43,15 @@ impl HashSha256 {
         hash
     }
 }
+
+impl Default for HashMd5 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Default for HashSha256 {
+    fn default() -> Self {
+        Self::new()
+    }
+}

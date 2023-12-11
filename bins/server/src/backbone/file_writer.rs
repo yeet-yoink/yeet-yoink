@@ -1,5 +1,5 @@
-use crate::backbone::file_hashes::FileHashes;
-use crate::backbone::hash::{HashMd5, HashSha256};
+use file_distribution::hash::{HashMd5, HashSha256};
+use file_distribution::{FileHashes, WriteSummary};
 use shared_files::{prelude::*, SharedTemporaryFileWriter};
 use shortguid::ShortGuid;
 use std::io::{Error, ErrorKind};
@@ -69,7 +69,7 @@ impl FileWriter {
 
         let summary = Arc::new(WriteSummary {
             expires: Instant::now() + expiration,
-            hashes: FileHashes { sha256, md5 },
+            hashes: FileHashes::new(md5, sha256),
             file_name: self.file_name,
             file_size_bytes: self.file_size,
         });
@@ -82,19 +82,6 @@ impl FileWriter {
         self.md5.update(buf);
         self.sha256.update(buf);
     }
-}
-
-/// A write result.
-#[derive(Debug)]
-pub struct WriteSummary {
-    /// The instant at which the file will expire.
-    pub expires: Instant,
-    /// The file hashes.
-    pub hashes: FileHashes,
-    /// The optional file name.
-    pub file_name: Option<String>,
-    /// The file size in bytes.
-    pub file_size_bytes: usize,
 }
 
 pub(crate) fn err_broken_pipe<T>() -> Result<T, Error> {

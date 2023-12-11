@@ -1,5 +1,5 @@
-use crate::backbone::WriteSummary;
 use bytes::{Bytes, BytesMut};
+use file_distribution::WriteSummary;
 use prost::Message;
 use shortguid::ShortGuid;
 use std::sync::Arc;

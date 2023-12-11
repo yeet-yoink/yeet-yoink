@@ -575,6 +575,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25cbce373ec4653f1a01a31e8a5e5ec0c622dc27ff9c4e6606eefef5cbbed4a5"
 
 [[package]]
+name = "file_distribution"
+version = "0.1.0"
+dependencies = [
+ "md5",
+ "sha2",
+ "shortguid",
+ "tokio",
+]
+
+[[package]]
 name = "fixedbitset"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2673,6 +2683,7 @@ dependencies = [
  "directories",
  "dotenvy",
  "exitcode",
+ "file_distribution",
  "futures",
  "headers-content-md5",
  "hex",

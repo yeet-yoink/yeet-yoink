@@ -1,6 +1,6 @@
-use crate::backbone::WriteSummary;
 use crate::metrics::transfer::{TransferMethod, TransferMetrics};
 use axum::headers::ContentType;
+use file_distribution::WriteSummary;
 use shared_files::{FileSize, SharedTemporaryFileReader};
 use std::borrow::Cow;
 use std::pin::Pin;
