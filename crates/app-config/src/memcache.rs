@@ -7,6 +7,7 @@ use url::Url;
 /// The default expiration time for Memcached entries.
 pub const DEFAULT_EXPIRATION: Duration = Duration::from_secs(3600);
 
+/// The Memcached-specific configuration.
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct MemcacheBackendConfig {
     /// A tag to identify the backend.
@@ -36,7 +37,11 @@ pub struct MemcacheBackendConfig {
 pub struct MemcacheConnectionString(String);
 
 impl MemcacheConnectionString {
-    fn new<S: AsRef<str>>(url: S) -> Result<Self, MemcacheConnectionStringError> {
+    /// Creates a new [`MemcacheConnectionString`] from a string.
+    fn new<S>(url: S) -> Result<Self, MemcacheConnectionStringError>
+    where
+        S: AsRef<str>,
+    {
         let parsed_url = Url::parse(url.as_ref());
         match parsed_url {
             Ok(url) => {
@@ -50,16 +55,13 @@ impl MemcacheConnectionString {
         }
     }
 
+    /// Obtains the URLs encoded by this connection string.
     pub fn get_urls(&self) -> Vec<String> {
         if self.0.is_empty() {
             Vec::default()
         } else {
             vec![self.0.clone()]
         }
-    }
-
-    pub fn into_inner(self) -> String {
-        self.0
     }
 }
 

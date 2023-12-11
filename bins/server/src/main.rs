@@ -4,7 +4,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 use crate::handlers::*;
-use app_config::{load_config, AppConfig};
+use app_config::AppConfig;
 use axum::Router;
 use backbone::{Backbone, FileAccessorBridge};
 use clap::ArgMatches;
@@ -53,7 +53,7 @@ async fn main() -> ExitCode {
         }
     };
 
-    let cfg: AppConfig = match load_config(dirs.config_local_dir(), &matches) {
+    let cfg = match AppConfig::load(dirs.config_local_dir(), &matches) {
         Ok(config) => config,
         Err(_) => {
             return ExitCode::FAILURE;
