@@ -26,7 +26,7 @@ pub struct MemcacheBackendConfig {
     ///
     /// To keep the example for 5 minutes, use a value of 300 seconds:
     ///
-    /// ```
+    /// ```text
     /// 300
     /// ```
     pub expiration_sec: Option<u32>,

@@ -4,8 +4,8 @@ use app_config::{
     AppConfig,
 };
 use async_trait::async_trait;
-use backend_traits::{Backend, DistributionError, DynBackend};
 use backend_traits::{BackendInfo, TryCreateFromConfig};
+use backend_traits::{DistributeFile, DistributionError, DynBackend};
 use file_distribution::protobuf::ItemMetadata;
 use file_distribution::{BoxedFileReader, FileProvider, GetFile, WriteSummary};
 use map_ok::{BoxOk, MapOk};
@@ -55,7 +55,7 @@ impl MemcacheBackend {
 }
 
 #[async_trait]
-impl Backend for MemcacheBackend {
+impl DistributeFile for MemcacheBackend {
     fn tag(&self) -> &str {
         &self.tag
     }
@@ -64,12 +64,12 @@ impl Backend for MemcacheBackend {
         &self,
         id: ShortGuid,
         summary: Arc<WriteSummary>,
-        file_accessor: FileProvider,
+        file_provider: FileProvider,
     ) -> Result<(), DistributionError> {
         // TODO: Sanity check the file size - don't store if too large.
 
         let expiration = self.expiration_secs;
-        let file = file_accessor.get_file(id).await?;
+        let file = file_provider.get_file(id).await?;
         let client = self.pool.get().unwrap();
 
         let metadata = ItemMetadata::new(id, &summary);
