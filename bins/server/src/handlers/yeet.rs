@@ -9,8 +9,8 @@ use axum::http::{HeaderName, HeaderValue};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::Router;
-use backbone::CompletionMode;
-use file_distribution::FileHashes;
+use backbone::{CompletionMode, NewFileError};
+use file_distribution::{FileHashes, GetFileReaderError};
 use headers_content_md5::ContentMd5;
 use hyper::body::Buf;
 use hyper::header::EXPIRES;
@@ -102,7 +102,7 @@ async fn do_yeet(
         .await
     {
         Ok(writer) => writer,
-        Err(e) => return Ok(e.into()),
+        Err(e) => return Ok(map_new_file_error_to_response(e)),
     };
 
     let mut stream = Box::pin(stream);
@@ -220,6 +220,36 @@ impl From<&FileHashes> for Hashes {
         Self {
             md5: hex::encode(value.md5.as_slice()),
             sha256: hex::encode(value.sha256),
+        }
+    }
+}
+
+fn map_new_file_error_to_response(value: NewFileError) -> Response {
+    match value {
+        NewFileError::FailedCreatingFile(id, e) => {
+            problemdetails::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .with_title("File not found")
+                .with_detail(format!("Failed to create temporary file: {e}"))
+                .with_value("id", id.to_string())
+                .with_value("error", e.to_string())
+                .into_response()
+        }
+        NewFileError::FailedCreatingWriter(id, e) => {
+            problemdetails::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .with_title("File not found")
+                .with_detail(format!(
+                    "Failed to create a writer for the temporary file: {e}"
+                ))
+                .with_value("id", id.to_string())
+                .with_value("error", e.to_string())
+                .into_response()
+        }
+        NewFileError::InternalErrorMayRetry(id) => {
+            problemdetails::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .with_title("File not found")
+                .with_detail("Failed to create temporary file - ID already in use".to_string())
+                .with_value("id", id.to_string())
+                .into_response()
         }
     }
 }

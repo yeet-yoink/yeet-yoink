@@ -4,10 +4,8 @@ use crate::file_writer::FileWriter;
 use crate::file_writer_guard::FileWriterGuard;
 use async_tempfile::TempFile;
 use axum::headers::ContentType;
-use axum::response::{IntoResponse, Response};
 use backend_traits::{BackendCommand, BackendCommandSender};
 use file_distribution::{BoxedFileReader, GetFileReaderError, WriteSummary};
-use hyper::StatusCode;
 use rendezvous::RendezvousGuard;
 use shared_files::{SharedFileWriter, SharedTemporaryFile};
 use shortguid::ShortGuid;
@@ -192,36 +190,4 @@ pub enum NewFileError {
     FailedCreatingWriter(ShortGuid, async_tempfile::Error),
     #[error("An internal error occurred; the operation may be retried")]
     InternalErrorMayRetry(ShortGuid),
-}
-
-impl From<NewFileError> for Response {
-    fn from(value: NewFileError) -> Self {
-        match value {
-            NewFileError::FailedCreatingFile(id, e) => {
-                problemdetails::new(StatusCode::INTERNAL_SERVER_ERROR)
-                    .with_title("File not found")
-                    .with_detail(format!("Failed to create temporary file: {e}"))
-                    .with_value("id", id.to_string())
-                    .with_value("error", e.to_string())
-                    .into_response()
-            }
-            NewFileError::FailedCreatingWriter(id, e) => {
-                problemdetails::new(StatusCode::INTERNAL_SERVER_ERROR)
-                    .with_title("File not found")
-                    .with_detail(format!(
-                        "Failed to create a writer for the temporary file: {e}"
-                    ))
-                    .with_value("id", id.to_string())
-                    .with_value("error", e.to_string())
-                    .into_response()
-            }
-            NewFileError::InternalErrorMayRetry(id) => {
-                problemdetails::new(StatusCode::INTERNAL_SERVER_ERROR)
-                    .with_title("File not found")
-                    .with_detail("Failed to create temporary file - ID already in use".to_string())
-                    .with_value("id", id.to_string())
-                    .into_response()
-            }
-        }
-    }
 }
