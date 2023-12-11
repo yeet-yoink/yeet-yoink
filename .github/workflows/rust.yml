@@ -17,6 +17,9 @@ jobs:
     steps:
     - name: Install Protoc
       uses: arduino/setup-protoc@v2
+      with:
+        version: "23.2"
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
     - uses: actions/checkout@v3
     - name: Build
       run: cargo build --verbose
