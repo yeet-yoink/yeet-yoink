@@ -4,8 +4,8 @@ use app_config::{
     AppConfig,
 };
 use async_trait::async_trait;
+use backend_traits::{Backend, DistributeFile, DistributionError};
 use backend_traits::{BackendInfo, TryCreateFromConfig};
-use backend_traits::{DistributeFile, DistributionError, DynBackend};
 use file_distribution::protobuf::ItemMetadata;
 use file_distribution::{BoxedFileReader, FileProvider, GetFile, WriteSummary};
 use map_ok::{BoxOk, MapOk};
@@ -151,7 +151,7 @@ impl BackendInfo for MemcacheBackend {
 impl TryCreateFromConfig for MemcacheBackend {
     type Error = MemcacheBackendConstructionError;
 
-    fn try_from_config(config: &AppConfig) -> Result<Vec<DynBackend>, Self::Error> {
+    fn try_from_config(config: &AppConfig) -> Result<Vec<Backend>, Self::Error> {
         let configs = &config.backends.memcache;
         if configs.is_empty() {
             return Ok(Vec::default());
@@ -161,7 +161,7 @@ impl TryCreateFromConfig for MemcacheBackend {
             .iter()
             .map(MemcacheBackend::try_new)
             .box_ok()
-            .map_ok(DynBackend::from)
+            .map_ok(Backend::from)
             .collect()
     }
 }

@@ -10,6 +10,6 @@ mod registration;
 
 pub use backend_command::{BackendCommand, BackendCommandSendError, BackendCommandSender};
 pub use backend_info::BackendInfo;
-pub use distribute_file::{DistributeFile, DistributionError, DynBackend};
+pub use distribute_file::{Backend, DistributeFile, DistributionError};
 pub use from_config::TryCreateFromConfig;
 pub use registration::{BackendRegistration, RegisterBackendError};

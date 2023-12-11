@@ -1,4 +1,4 @@
-use crate::{BackendInfo, BackendRegistration, DynBackend, RegisterBackendError};
+use crate::{Backend, BackendInfo, BackendRegistration, RegisterBackendError};
 use app_config::AppConfig;
 use std::error::Error;
 
@@ -8,7 +8,7 @@ where
 {
     type Error;
 
-    fn try_from_config(config: &AppConfig) -> Result<Vec<DynBackend>, Self::Error>;
+    fn try_from_config(config: &AppConfig) -> Result<Vec<Backend>, Self::Error>;
 
     fn register<T>(registry: T, config: &AppConfig) -> Result<(), RegisterBackendError>
     where

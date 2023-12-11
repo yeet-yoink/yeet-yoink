@@ -1,6 +1,6 @@
 use app_config::AppConfig;
 use backend_traits::{
-    BackendCommand, BackendCommandSender, BackendRegistration, DynBackend, RegisterBackendError,
+    Backend, BackendCommand, BackendCommandSender, BackendRegistration, RegisterBackendError,
     TryCreateFromConfig,
 };
 use file_distribution::FileProvider;
@@ -28,7 +28,7 @@ impl BackendRegistry {
 
     fn new(
         cleanup_rendezvous: RendezvousGuard,
-        backends: Vec<DynBackend>,
+        backends: Vec<Backend>,
         file_accessor: FileProvider,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(EVENT_BUFFER_SIZE);
@@ -53,7 +53,7 @@ impl BackendRegistry {
     }
 
     async fn handle_events(
-        backends: Vec<DynBackend>,
+        backends: Vec<Backend>,
         mut receiver: Receiver<BackendCommand>,
         cleanup_rendezvous: RendezvousGuard,
         file_accessor: FileProvider,
@@ -89,7 +89,7 @@ impl BackendRegistry {
 }
 
 pub struct BackendRegistryBuilder {
-    backends: Vec<DynBackend>,
+    backends: Vec<Backend>,
     cleanup_rendezvous: RendezvousGuard,
     file_accessor: FileProvider,
 }
@@ -180,7 +180,7 @@ impl BackendRegistryBuilder {
     }
 
     /// Registers multiple backends.
-    fn add_backends_from_iter<I: IntoIterator<Item = DynBackend>>(
+    fn add_backends_from_iter<I: IntoIterator<Item = Backend>>(
         mut self,
         backends: I,
     ) -> BackendRegistryBuilder {

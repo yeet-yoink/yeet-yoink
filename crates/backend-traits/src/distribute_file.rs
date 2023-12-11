@@ -5,6 +5,7 @@ use std::error::Error;
 use std::ops::Deref;
 use std::sync::Arc;
 
+/// Main trait for file distribution to a backend.
 #[async_trait]
 pub trait DistributeFile: Send + Sync {
     /// Gets the tag of the backend.
@@ -19,8 +20,7 @@ pub trait DistributeFile: Send + Sync {
     ) -> Result<(), DistributionError>;
 }
 
-/// `DynBackend` is a wrapper struct that holds a boxed trait object,
-/// enabling dynamic dispatch for different implementations of the `Backend` trait.
+/// [`Backend`] is a wrapper struct that holds a dynamically dispatched [`DistributeFile`] instance.
 ///
 /// # Example
 ///
@@ -28,7 +28,7 @@ pub trait DistributeFile: Send + Sync {
 /// use std::sync::Arc;
 /// use async_trait::async_trait;
 /// use shortguid::ShortGuid;
-/// use backend_traits::{DistributeFile, DistributionError, DynBackend};
+/// use backend_traits::{DistributeFile, DistributionError, Backend};
 /// use file_distribution::{FileProvider, WriteSummary};
 ///
 /// struct PostgresBackend;
@@ -53,17 +53,17 @@ pub trait DistributeFile: Send + Sync {
 ///     }
 /// }
 ///
-/// let postgres_backend: DynBackend = DynBackend::wrap(PostgresBackend);
-/// let my_sql_backend: DynBackend = DynBackend::wrap(MySqlBackend);
+/// let postgres_backend = Backend::wrap(PostgresBackend);
+/// let my_sql_backend = Backend::wrap(MySqlBackend);
 /// ```
-pub struct DynBackend(Box<dyn DistributeFile>);
+pub struct Backend(Box<dyn DistributeFile>);
 
-impl DynBackend {
+impl Backend {
     pub fn new<T>(b: Box<T>) -> Self
     where
         T: DistributeFile + 'static,
     {
-        DynBackend(b)
+        Backend(b)
     }
 
     pub fn wrap<T>(b: T) -> Self
@@ -74,7 +74,7 @@ impl DynBackend {
     }
 }
 
-impl Deref for DynBackend {
+impl Deref for Backend {
     type Target = dyn DistributeFile;
 
     fn deref(&self) -> &Self::Target {
@@ -82,12 +82,12 @@ impl Deref for DynBackend {
     }
 }
 
-impl<T> From<Box<T>> for DynBackend
+impl<T> From<Box<T>> for Backend
 where
     T: DistributeFile + 'static,
 {
     fn from(b: Box<T>) -> Self {
-        DynBackend::new(b)
+        Backend::new(b)
     }
 }
 
