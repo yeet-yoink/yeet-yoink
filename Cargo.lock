@@ -225,7 +225,7 @@ dependencies = [
  "axum",
  "backbone-traits",
  "backend-traits",
- "file_distribution",
+ "file-distribution",
  "hex",
  "hyper",
  "metrics",
@@ -244,7 +244,7 @@ version = "0.1.0"
 dependencies = [
  "async-tempfile",
  "async-trait",
- "file_distribution",
+ "file-distribution",
  "shared-files",
  "shortguid",
  "thiserror",
@@ -259,7 +259,7 @@ dependencies = [
  "async-trait",
  "backbone-traits",
  "backend-traits",
- "file_distribution",
+ "file-distribution",
  "map-ok",
  "memcache 0.17.1",
  "r2d2",
@@ -279,7 +279,7 @@ dependencies = [
  "app-config",
  "async-trait",
  "backbone-traits",
- "file_distribution",
+ "file-distribution",
  "shortguid",
  "thiserror",
  "tokio",
@@ -649,7 +649,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25cbce373ec4653f1a01a31e8a5e5ec0c622dc27ff9c4e6606eefef5cbbed4a5"
 
 [[package]]
-name = "file_distribution"
+name = "file-distribution"
 version = "0.1.0"
 dependencies = [
  "bytes",
@@ -2754,7 +2754,7 @@ dependencies = [
  "directories",
  "dotenvy",
  "exitcode",
- "file_distribution",
+ "file-distribution",
  "futures",
  "headers-content-md5",
  "hex",

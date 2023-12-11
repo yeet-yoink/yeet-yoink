@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 async-tempfile = "0.5.0"
 async-trait = "0.1.74"
-file_distribution = { version = "0.1.0", path = "../file_distribution" }
+file-distribution = { version = "0.1.0", path = "../file-distribution" }
 shared-files = "0.1.0"
 shortguid = "0.6.0"
 thiserror = "1.0.50"

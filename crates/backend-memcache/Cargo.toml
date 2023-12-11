@@ -8,7 +8,7 @@ app-config = { version = "0.1.0", path = "../app-config", features = ["memcache"
 async-trait = "0.1.74"
 backbone-traits = { version = "0.1.0", path = "../backbone-traits" }
 backend-traits = { version = "0.1.0", path = "../backend-traits" }
-file_distribution = { version = "0.1.0", path = "../file_distribution" }
+file-distribution = { version = "0.1.0", path = "../file-distribution" }
 map-ok = "0.1.0"
 memcache = "0.17.1"
 r2d2 = "0.8.10"

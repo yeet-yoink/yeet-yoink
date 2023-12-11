@@ -30,7 +30,7 @@ ctrlc = { version = "3.4.1", features = ["termination"] }
 directories = "5.0.1"
 dotenvy = "0.15.7"
 exitcode = "1.1.2"
-file_distribution = { path = "../../crates/file_distribution" }
+file-distribution = { path = "../../crates/file-distribution" }
 futures = "0.3.29"
 headers-content-md5 = "0.1.1"
 hex = "0.4.3"
