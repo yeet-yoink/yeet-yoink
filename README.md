@@ -1,13 +1,13 @@
 # yeet/yoink — A file storage and retrieval service
 
-[![WIP](https://img.shields.io/badge/work_in_progress-yellow)](https://github.com/sunsided/yeet-yoink)
-[![Latest version](https://img.shields.io/github/v/release/sunsided/yeet-yoink)](https://github.com/sunsided/yeet-yoink/releases)
-[![License](https://img.shields.io/github/license/sunsided/yeet-yoink)](https://github.com/sunsided/yeet-yoink/blob/main/LICENSE.md)
-[![Language](https://img.shields.io/github/languages/top/sunsided/yeet-yoink)](https://github.com/sunsided/yeet-yoink)
-[![Build Status](https://github.com/sunsided/yeet-yoink/actions/workflows/rust.yml/badge.svg)](https://github.com/sunsided/yeet-yoink/actions/workflows/rust.yml)
-[![Issues](https://img.shields.io/github/issues/sunsided/yeet-yoink)](https://github.com/sunsided/yeet-yoink/issues)
-[![Dependency Status](https://img.shields.io/librariesio/github/sunsided/yeet-yoink)](https://libraries.io/github/sunsided/yeet-yoink)
-[![Code size](https://img.shields.io/github/languages/code-size/sunsided/yeet-yoink)](https://github.com/sunsided/yeet-yoink)
+[![WIP](https://img.shields.io/badge/work_in_progress-yellow)](https://github.com/yeet-yoink/yeet-yoink)
+[![Latest version](https://img.shields.io/github/v/release/yeet-yoink/yeet-yoink)](https://github.com/yeet-yoink/yeet-yoink/releases)
+[![License](https://img.shields.io/github/license/yeet-yoink/yeet-yoink)](https://github.com/yeet-yoink/yeet-yoink/blob/main/LICENSE.md)
+[![Language](https://img.shields.io/github/languages/top/yeet-yoink/yeet-yoink)](https://github.com/yeet-yoink/yeet-yoink)
+[![Build Status](https://github.com/yeet-yoink/yeet-yoink/actions/workflows/rust.yml/badge.svg)](https://github.com/yeet-yoink/yeet-yoink/actions/workflows/rust.yml)
+[![Issues](https://img.shields.io/github/issues/yeet-yoink/yeet-yoink)](https://github.com/yeet-yoink/yeet-yoink/issues)
+[![Dependency Status](https://img.shields.io/librariesio/github/yeet-yoink/yeet-yoink)](https://libraries.io/github/yeet-yoink/yeet-yoink)
+[![Code size](https://img.shields.io/github/languages/code-size/yeet-yoink/yeet-yoink)](https://github.com/yeet-yoink/yeet-yoink)
 
 A service to which you can yeet your files in order to yoink them from somewhere else.
 This is meant to simplify cluster-local file sharing with configurable persistence backends.
