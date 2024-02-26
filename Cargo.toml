@@ -18,7 +18,7 @@ base64 = "0.21.2"
 chrono = "0.4.26"
 clap = { version = "4.3.8", features = ["env"] }
 crossbeam = "0.8.2"
-ctrlc = { version = "3.4.0", features = ["termination"] }
+ctrlc = { version = "3.4.2", features = ["termination"] }
 dotenvy = "0.15.7"
 exitcode = "1.1.2"
 futures = "0.3.28"
