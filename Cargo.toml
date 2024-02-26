@@ -37,7 +37,7 @@ sha2 = "0.10.7"
 shared-files = "0.1.0"
 shortguid = { version = "0.6.0", features = ["serde"] }
 thiserror = "1.0.55"
-time = "0.3.22"
+time = "0.3.34"
 tokio = { version = "1.36.0", features = ["full"] }
 tokio-stream = { version = "0.1.14", features = ["net"] }
 tokio-util = { version = "0.7.8", features = ["io"] }
