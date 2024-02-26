@@ -29,7 +29,7 @@ lazy_static = "1.4.0"
 md5 = "0.7.0"
 mime-db = "1.6.0"
 percent-encoding = "2.3.0"
-pin-project = "1.1.0"
+pin-project = "1.1.4"
 problemdetails = { version = "0.2.1", features = ["axum"] }
 prometheus-client = "0.22.1"
 serde = { version = "1.0.164", features = ["derive"] }
