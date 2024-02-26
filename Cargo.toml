@@ -38,7 +38,7 @@ shared-files = "0.1.0"
 shortguid = { version = "0.5.0", features = ["serde"] }
 thiserror = "1.0.40"
 time = "0.3.22"
-tokio = { version = "1.28.2", features = ["full"] }
+tokio = { version = "1.36.0", features = ["full"] }
 tokio-stream = { version = "0.1.14", features = ["net"] }
 tokio-util = { version = "0.7.8", features = ["io"] }
 tower = { version = "0.4.13", features = ["tokio"] }
