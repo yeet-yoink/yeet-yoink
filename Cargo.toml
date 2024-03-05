@@ -14,7 +14,7 @@ rust-version = "1.68.0"
 anyhow = "1.0.80"
 async-tempfile = "0.5.0"
 axum = { version = "0.6.20", features = ["http2", "headers", "macros", "json"] }
-base64 = "0.21.7"
+base64 = "0.22.0"
 chrono = "0.4.34"
 clap = { version = "4.5.1", features = ["env"] }
 crossbeam = "0.8.4"
