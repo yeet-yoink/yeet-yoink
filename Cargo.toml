@@ -31,7 +31,7 @@ mime-db = "1.7.0"
 percent-encoding = "2.3.1"
 pin-project = "1.1.5"
 problemdetails = { version = "0.2.1", features = ["axum"] }
-prometheus-client = "0.22.1"
+prometheus-client = "0.22.2"
 serde = { version = "1.0.197", features = ["derive"] }
 sha2 = "0.10.8"
 shared-files = "0.1.0"
