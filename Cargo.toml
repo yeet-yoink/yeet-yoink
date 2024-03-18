@@ -11,7 +11,7 @@ edition = "2021"
 rust-version = "1.68.0"
 
 [dependencies]
-anyhow = "1.0.80"
+anyhow = "1.0.81"
 async-tempfile = "0.5.0"
 axum = { version = "0.6.20", features = ["http2", "headers", "macros", "json"] }
 base64 = "0.22.0"
