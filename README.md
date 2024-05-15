@@ -5,6 +5,7 @@
 [![License](https://img.shields.io/github/license/yeet-yoink/yeet-yoink)](https://github.com/yeet-yoink/yeet-yoink/blob/main/LICENSE.md)
 [![Language](https://img.shields.io/github/languages/top/yeet-yoink/yeet-yoink)](https://github.com/yeet-yoink/yeet-yoink)
 [![Build Status](https://github.com/yeet-yoink/yeet-yoink/actions/workflows/rust.yml/badge.svg)](https://github.com/yeet-yoink/yeet-yoink/actions/workflows/rust.yml)
+[![codecov](https://codecov.io/gh/yeet-yoink/yeet-yoink/graph/badge.svg?token=Z1OGLKDBNI)](https://codecov.io/gh/yeet-yoink/yeet-yoink)
 [![Issues](https://img.shields.io/github/issues/yeet-yoink/yeet-yoink)](https://github.com/yeet-yoink/yeet-yoink/issues)
 [![Dependency Status](https://img.shields.io/librariesio/github/yeet-yoink/yeet-yoink)](https://libraries.io/github/yeet-yoink/yeet-yoink)
 [![Code size](https://img.shields.io/github/languages/code-size/yeet-yoink/yeet-yoink)](https://github.com/yeet-yoink/yeet-yoink)
