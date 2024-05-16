@@ -184,7 +184,7 @@ impl BackendRegistryBuilder {
         mut self,
         backends: I,
     ) -> BackendRegistryBuilder {
-        self.backends.extend(backends.into_iter());
+        self.backends.extend(backends);
         self
     }
 }

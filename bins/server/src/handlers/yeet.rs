@@ -10,7 +10,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::Router;
 use backbone::{CompletionMode, NewFileError};
-use file_distribution::{FileHashes, GetFileReaderError};
+use file_distribution::FileHashes;
 use headers_content_md5::ContentMd5;
 use hyper::body::Buf;
 use hyper::header::EXPIRES;
