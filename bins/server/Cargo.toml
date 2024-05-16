@@ -1,6 +1,6 @@
 [package]
 name = "yeet-yoink"
-version = "0.1.0-unstable"
+version = "0.1.1-unstable.2"
 description = "A file storage API"
 license = "EUPL-1.2"
 keywords = ["file-storage", "cloud-storage"]
@@ -18,7 +18,7 @@ memcache = ["dep:backend-memcache", "app-config/memcache"]
 anyhow = "1.0.83"
 app-config = { version = "0.1.0", path = "../../crates/app-config" }
 axum = { version = "0.6.20", features = ["http2", "headers", "macros", "json"] }
-backbone = { path = "../../crates/backbone" }
+backbone = { version = "0.1.0", path = "../../crates/backbone" }
 backend-memcache = { version = "0.1.0", path = "../../crates/backend-memcache", optional = true }
 backend-traits = { version = "0.1.0", path = "../../crates/backend-traits" }
 base64 = "0.22.1"

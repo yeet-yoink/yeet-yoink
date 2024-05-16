@@ -2686,7 +2686,7 @@ dependencies = [
 
 [[package]]
 name = "yeet-yoink"
-version = "0.1.0-unstable"
+version = "0.1.1-unstable.2"
 dependencies = [
  "anyhow",
  "app-config",
