@@ -38,7 +38,8 @@ pub trait DistributeFile: Send + Sync {
 ///     fn tag(&self) -> &str { "postgres" }
 ///
 ///     async fn distribute_file(&self, id: ShortGuid, summary: Arc<WriteSummary>, file_accessor: FileProvider) -> Result<(), DistributionError> {
-///         todo!()
+///         // ...
+/// #       Ok(())
 ///     }
 /// }
 ///
@@ -49,7 +50,8 @@ pub trait DistributeFile: Send + Sync {
 ///     fn tag(&self) -> &str { "mysql" }
 ///
 ///     async fn distribute_file(&self, id: ShortGuid, summary: Arc<WriteSummary>, file_accessor: FileProvider) -> Result<(), DistributionError> {
-///         todo!()
+///         // ...
+/// #        Ok(())
 ///     }
 /// }
 ///
