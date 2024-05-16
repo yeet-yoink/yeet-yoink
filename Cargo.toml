@@ -1,47 +1,7 @@
-[package]
-name = "yeet-yoink"
-version = "0.1.1-unstable"
-description ="A file storage API"
-license = "EUPL-1.2"
-keywords = ["file-storage", "cloud-storage"]
-repository = "https://github.com/yeet-yoink/yeet-yoink"
-readme = "README.md"
-authors = ["Markus Mayer"]
-edition = "2021"
-rust-version = "1.68.0"
-
-[dependencies]
-anyhow = "1.0.80"
-async-tempfile = "0.5.0"
-axum = { version = "0.6.20", features = ["http2", "headers", "macros", "json"] }
-base64 = "0.22.0"
-chrono = "0.4.38"
-clap = { version = "4.5.1", features = ["env"] }
-crossbeam = "0.8.4"
-ctrlc = { version = "3.4.4", features = ["termination"] }
-dotenvy = "0.15.7"
-exitcode = "1.1.2"
-futures = "0.3.30"
-headers-content-md5 = "0.1.1"
-hex = "0.4.3"
-hyper = { version = "0.14.28", features = ["http1", "http2", "server", "h2"] }
-lazy_static = "1.4.0"
-md5 = "0.7.0"
-mime-db = "1.7.0"
-percent-encoding = "2.3.1"
-pin-project = "1.1.5"
-problemdetails = { version = "0.2.1", features = ["axum"] }
-prometheus-client = "0.22.2"
-serde = { version = "1.0.197", features = ["derive"] }
-sha2 = "0.10.8"
-shared-files = "0.1.0"
-shortguid = { version = "0.6.0", features = ["serde"] }
-thiserror = "1.0.60"
-time = "0.3.34"
-tokio = { version = "1.36.0", features = ["full"] }
-tokio-stream = { version = "0.1.14", features = ["net"] }
-tokio-util = { version = "0.7.11", features = ["io"] }
-tower = { version = "0.4.13", features = ["tokio"] }
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter", "parking_lot", "tracing-log", "json"] }
-uuid = { version = "1.7.0", features = ["v1", "rng", "serde"] }
+[workspace]
+default-members = [ "bins/server" ]
+members =[
+    "bins/*",
+    "crates/*"
+]
+resolver = "2"

@@ -1,0 +1,60 @@
+[package]
+name = "yeet-yoink"
+version = "0.1.0-unstable"
+description = "A file storage API"
+license = "EUPL-1.2"
+keywords = ["file-storage", "cloud-storage"]
+repository = "https://github.com/sunsided/yeet-yoink"
+readme = "README.md"
+authors = ["Markus Mayer"]
+edition = "2021"
+rust-version = "1.68.0"
+
+[features]
+default = ["memcache"]
+memcache = ["dep:backend-memcache", "app-config/memcache"]
+
+[dependencies]
+anyhow = "1.0.83"
+app-config = { version = "0.1.0", path = "../../crates/app-config" }
+axum = { version = "0.6.20", features = ["http2", "headers", "macros", "json"] }
+backbone = { path = "../../crates/backbone" }
+backend-memcache = { version = "0.1.0", path = "../../crates/backend-memcache", optional = true }
+backend-traits = { version = "0.1.0", path = "../../crates/backend-traits" }
+base64 = "0.22.1"
+chrono = "0.4.38"
+clap = { version = "4.4.11", features = ["env"] }
+crossbeam = "0.8.4"
+ctrlc = { version = "3.4.2", features = ["termination"] }
+directories = "5.0.1"
+dotenvy = "0.15.7"
+exitcode = "1.1.2"
+file-distribution = { path = "../../crates/file-distribution" }
+futures = "0.3.30"
+headers-content-md5 = "0.1.1"
+hex = "0.4.3"
+hyper = { version = "0.14.28", features = ["http1", "http2", "server", "h2"] }
+metrics = { version = "0.1.0", path = "../../crates/metrics" }
+mime-db = "1.7.0"
+percent-encoding = "2.3.1"
+pin-project = "1.1.5"
+problemdetails = { version = "0.2.1", features = ["axum"] }
+rendezvous = { version = "0.2.3", features = ["tokio", "log"] }
+serde = { version = "1.0.202", features = ["derive"] }
+shared-files = "0.1.0"
+shortguid = { version = "0.6.0", features = ["serde"] }
+thiserror = "1.0.60"
+tokio = { version = "1.37.0", features = ["full"] }
+tokio-stream = { version = "0.1.15", features = ["net"] }
+tokio-util = { version = "0.7.11", features = ["io", "io-util"] }
+tower = { version = "0.4.13", features = ["tokio"] }
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter", "parking_lot", "tracing-log", "json"] }
+uuid = { version = "1.8.0", features = ["v1", "rng", "serde"] }
+
+[dev-dependencies]
+serde_yaml = "0.9.34"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

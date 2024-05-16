@@ -1,0 +1,22 @@
+[package]
+name = "backbone"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-tempfile = { version = "0.5.0", features = ["uuid"] }
+axum = { version = "0.6", default-features = false, features = ["headers"] }
+backend-traits = { version = "0.1.0", path = "../backend-traits" }
+file-distribution = { path = "../file-distribution" }
+hex = "0.4.3"
+metrics = { path = "../metrics" }
+rendezvous = "0.2.3"
+shared-files = "0.1.0"
+shortguid = "0.6.0"
+thiserror = "1.0.60"
+tokio = { version = "1.37.0", features = ["io-std", "time"] }
+tracing = "0.1.40"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
