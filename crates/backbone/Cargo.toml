@@ -10,11 +10,11 @@ backend-traits = { version = "0.1.0", path = "../backend-traits" }
 file-distribution = { path = "../file-distribution" }
 hex = "0.4.3"
 metrics = { path = "../metrics" }
-rendezvous = "0.2.2"
+rendezvous = "0.2.3"
 shared-files = "0.1.0"
 shortguid = "0.6.0"
-thiserror = "1.0.50"
-tokio = { version = "1.35.0", features = ["io-std", "time"] }
+thiserror = "1.0.60"
+tokio = { version = "1.37.0", features = ["io-std", "time"] }
 tracing = "0.1.40"
 
 [package.metadata.docs.rs]

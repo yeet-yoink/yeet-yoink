@@ -5,11 +5,11 @@ edition = "2021"
 
 [dependencies]
 app-config = { version = "0.1.0", path = "../app-config" }
-async-trait = "0.1.74"
+async-trait = "0.1.80"
 file-distribution = { version = "0.1.0", path = "../file-distribution" }
 shortguid = "0.6.0"
-thiserror = "1.0.50"
-tokio = { version = "1.35.0", default-features = false, features = ["rt", "sync"] }
+thiserror = "1.0.60"
+tokio = { version = "1.37.0", default-features = false, features = ["rt", "sync"] }
 
 [package.metadata.docs.rs]
 all-features = true
