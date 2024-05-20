@@ -19,6 +19,8 @@ pub trait DistributeFile: Send + Sync + BackendTag {
 
 #[derive(Debug, thiserror::Error)]
 pub enum DistributionError {
+    #[error("The backend rejected the storage request")]
+    BackendRejected,
     #[error(transparent)]
     BackendSpecific(Box<dyn Error>),
     #[error(transparent)]

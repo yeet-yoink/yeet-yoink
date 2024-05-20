@@ -68,7 +68,11 @@ impl DistributeFile for MemcacheBackend {
         summary: Arc<WriteSummary>,
         file_provider: FileProvider,
     ) -> Result<(), DistributionError> {
-        // TODO: Sanity check the file size - don't store if too large.
+        // TODO: #59 Make maximum storage size configurable.
+        const ONE_MEGABYTE: usize = 1024 * 1024;
+        if summary.file_size_bytes > ONE_MEGABYTE {
+            return Err(DistributionError::BackendRejected);
+        }
 
         let expiration = self.expiration_secs;
         let file = file_provider.get_file(id).await?;
