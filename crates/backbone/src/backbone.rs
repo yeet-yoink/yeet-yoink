@@ -20,7 +20,7 @@ use tokio::time::Instant;
 use tracing::info;
 
 /// The duration for which to keep each file alive.
-// pub const TEMPORAL_LEASE: Duration = Duration::from_secs(5 * 60); // TODO: Make local storage duration configurable
+// pub const TEMPORAL_LEASE: Duration = Duration::from_secs(5 * 60); // TODO: #61 Make local storage duration configurable
 pub const TEMPORAL_LEASE: Duration = Duration::from_secs(10);
 
 /// A local file distribution manager.
