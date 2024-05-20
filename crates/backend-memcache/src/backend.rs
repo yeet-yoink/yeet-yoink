@@ -8,6 +8,7 @@ use backend_traits::{
     Backend, BackendTag, DistributeFile, DistributionError, ReceiveError, ReceiveFile,
 };
 use backend_traits::{BackendInfo, TryCreateFromConfig};
+use bytes::Bytes;
 use file_distribution::protobuf::ItemMetadata;
 use file_distribution::{BoxedFileReader, FileProvider, GetFile, WriteSummary};
 use map_ok::{BoxOk, MapOk};
@@ -145,6 +146,22 @@ fn try_get_metadata(
                 Err(ReceiveError::BackendSpecific(id, Box::new(e)))
             }
         },
+        Err(m) => Err(ReceiveError::BackendSpecific(id, Box::new(m))),
+    }
+}
+
+fn try_get_data(
+    id: ShortGuid,
+    client: &PooledConnection<MemcacheConnectionManager>,
+    tag: &str,
+) -> Result<Bytes, ReceiveError> {
+    let key = format!("meta-{}", id);
+    match client.get::<Vec<u8>>(&key) {
+        Ok(None) => {
+            warn!(file_id = %id, "File {id} not found on backend {tag}", tag = tag, id = id);
+            Err(ReceiveError::UnknownFile(id))
+        }
+        Ok(Some(bytes)) => Ok(Bytes::from(bytes)), // TODO: Buffer to a local file instead; could reduce memory for large blobs, help with streaming from the backend, from the server and works toward #60
         Err(m) => Err(ReceiveError::BackendSpecific(id, Box::new(m))),
     }
 }
