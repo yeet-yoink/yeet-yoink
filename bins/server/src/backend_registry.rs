@@ -26,6 +26,17 @@ impl BackendRegistry {
         BackendRegistryBuilder::new(cleanup_rendezvous, file_accessor)
     }
 
+    /// Creates a new instance of the [`BackendRegistry`].
+    ///
+    /// # Arguments
+    ///
+    /// - `cleanup_rendezvous`: A `RendezvousGuard` used for cleanup.
+    /// - `backends`: A `Vec<Backend>` containing the list of backends.
+    /// - `file_accessor`: A `FileProvider` used for file access.
+    ///
+    /// # Returns
+    ///
+    /// A new instance of [`BackendRegistry`].
     fn new(
         cleanup_rendezvous: RendezvousGuard,
         backends: Vec<Backend>,
@@ -44,6 +55,12 @@ impl BackendRegistry {
         }
     }
 
+    /// Retrieves the sender of the backend command.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(sender)`: If the sender exists, it returns the backend command sender.
+    /// - `None`: If the sender is not available, it returns `None`.
     pub(crate) fn get_sender(&self) -> Option<BackendCommandSender> {
         self.sender.take().map(BackendCommandSender::from)
     }
@@ -52,6 +69,26 @@ impl BackendRegistry {
         self.handle.await
     }
 
+    /// Handles backend-related events asynchronously.
+    ///
+    /// This function continuously receives events from a receiver and performs appropriate tasks
+    /// based on the received event type.
+    ///
+    /// # Arguments
+    /// - `backends`: A vector of `Backend` objects to be used for processing.
+    /// - `receiver`: Receiver end of a channel where backend commands are sent.
+    /// - `cleanup_rendezvous`: A `RendezvousGuard` instance used to signal when all backend tasks
+    ///   have finished for proper cleanup.
+    /// - `file_accessor`: A `FileProvider` to provide access to the files to be distributed.
+    ///
+    /// # Behavior
+    /// This function works in a loop, where it awaits for a `BackendCommand` from `receiver`.
+    /// Based on the command, it performs different tasks. If the command is
+    /// `BackendCommand::DistributeFile`, it distributes the file across the backends.
+    ///
+    /// # Error Handling
+    /// If an error occurs during the distribution of a file on a backend, it logs a warning message
+    /// but continues to next backend.
     async fn handle_events(
         backends: Vec<Backend>,
         mut receiver: Receiver<BackendCommand>,
@@ -64,7 +101,7 @@ impl BackendRegistry {
                     // TODO: Handle file distribution
                     debug!(file_id = %id, "Handling distribution of file {id}", id = id);
 
-                    // TODO: Spawn distribution tasks in background
+                    // TODO: #55 Spawn distribution tasks in background
 
                     // TODO: Initiate tasks in priority order?
                     for backend in &backends {
