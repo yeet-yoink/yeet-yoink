@@ -1,4 +1,4 @@
-use file_distribution::WriteSummary;
+use file_distribution::{BoxedFileReader, WriteSummary};
 use shortguid::ShortGuid;
 use std::sync::Arc;
 use tokio::sync::mpsc::error::SendError;
@@ -6,7 +6,7 @@ use tokio::sync::mpsc::Sender;
 
 pub enum BackendCommand {
     DistributeFile(ShortGuid, Arc<WriteSummary>),
-    ReceiveFile(ShortGuid, Sender<FileReceiverPlaceholder>),
+    ReceiveFile(ShortGuid, Sender<BoxedFileReader>),
 }
 
 pub struct BackendCommandSender {
@@ -28,6 +28,3 @@ impl From<Sender<BackendCommand>> for BackendCommandSender {
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 pub struct BackendCommandSendError(#[from] SendError<BackendCommand>);
-
-// TODO: Implement meaningful event type.
-pub struct FileReceiverPlaceholder;

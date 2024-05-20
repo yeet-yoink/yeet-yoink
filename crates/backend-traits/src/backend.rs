@@ -1,10 +1,15 @@
-use crate::DistributeFile;
+use crate::{DistributeFile, ReceiveFile};
 use std::ops::Deref;
 
 pub trait BackendTag {
     /// Gets the tag of the backend.
     fn tag(&self) -> &str;
 }
+
+pub trait BackendTrait: BackendTag + ReceiveFile + DistributeFile {}
+
+/// Auto-implementation for [`BackendTrait`] for supported types.
+impl<T> BackendTrait for T where T: BackendTag + ReceiveFile + DistributeFile {}
 
 /// [`Backend`] is a wrapper struct that holds a dynamically dispatched [`DistributeFile`] instance.
 ///
@@ -48,26 +53,26 @@ pub trait BackendTag {
 /// let postgres_backend = Backend::wrap(PostgresBackend);
 /// let my_sql_backend = Backend::wrap(MySqlBackend);
 /// ```
-pub struct Backend(Box<dyn DistributeFile>); // TODO: #54 Add ReceiveFile trait
+pub struct Backend(Box<dyn BackendTrait>); // TODO: #54 Add ReceiveFile trait
 
 impl Backend {
     pub fn new<T>(b: Box<T>) -> Self
     where
-        T: DistributeFile + 'static,
+        T: BackendTrait + 'static,
     {
         Backend(b)
     }
 
     pub fn wrap<T>(b: T) -> Self
     where
-        T: DistributeFile + 'static,
+        T: BackendTrait + 'static,
     {
         Self::new(Box::new(b))
     }
 }
 
 impl Deref for Backend {
-    type Target = dyn DistributeFile;
+    type Target = dyn BackendTrait;
 
     fn deref(&self) -> &Self::Target {
         &*self.0
@@ -76,7 +81,7 @@ impl Deref for Backend {
 
 impl<T> From<Box<T>> for Backend
 where
-    T: DistributeFile + 'static,
+    T: BackendTrait + 'static,
 {
     fn from(b: Box<T>) -> Self {
         Backend::new(b)

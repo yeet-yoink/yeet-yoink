@@ -105,41 +105,71 @@ impl BackendRegistry {
 
             // Spawn the task onto the executor to avoid race conditions.
             // We do this such that uploads do not block downloads, and vice versa.
-            tokio::task::spawn(async move {
-                match event {
-                    BackendCommand::DistributeFile(id, summary) => {
-                        debug!(file_id = %id, "Handling distribution of file {id}", id = id);
-
-                        // TODO: #55 Spawn distribution tasks in background
-
-                        // TODO: #57 Initiate tasks in priority order?
-                        for backend in backends.iter() {
-                            match backend
-                                .distribute_file(id, summary.clone(), file_accessor.clone())
-                                .await
-                            {
-                                Ok(_) => {}
-                                Err(e) => {
-                                    warn!(file_id = %id, "Failed to distribute file using backend {tag}: {error}", tag = backend.tag(), error = e);
-                                }
-                            }
-                        }
-                    }
-                    BackendCommand::ReceiveFile(id, sender) => {
-                        debug!(file_id = %id, "Handling download of file {id}", id = id);
-                        todo!("Implement download of file")
-                    }
-                }
-
-                debug!("Closing background event handling");
-                task_guard.completed();
-            });
+            tokio::task::spawn(handle_event_impl(
+                event,
+                backends,
+                file_accessor,
+                task_guard,
+            ));
         }
 
         // TODO: Wait until all currently running tasks have finished.
         debug!("Closing backend event loop");
         cleanup_rendezvous.completed();
     }
+}
+
+async fn handle_event_impl(
+    event: BackendCommand,
+    backends: Arc<Vec<Backend>>,
+    file_accessor: Arc<FileProvider>,
+    task_guard: RendezvousGuard,
+) {
+    match event {
+        BackendCommand::DistributeFile(id, summary) => {
+            debug!(file_id = %id, "Handling distribution of file {id}", id = id);
+
+            // TODO: #55 Spawn distribution tasks in background
+
+            // TODO: #57 Initiate tasks in priority order?
+            for backend in backends.iter() {
+                match backend
+                    .distribute_file(id, summary.clone(), file_accessor.clone())
+                    .await
+                {
+                    Ok(_) => {}
+                    Err(e) => {
+                        warn!(file_id = %id, "Failed to distribute file using backend {tag}: {error}", tag = backend.tag(), error = e);
+                    }
+                }
+            }
+        }
+        BackendCommand::ReceiveFile(id, sender) => {
+            debug!(file_id = %id, "Handling download of file {id}", id = id);
+
+            // TODO: #58 Initiate tasks in priority order?
+            for backend in backends.iter() {
+                match backend.receive_file(id).await {
+                    Ok(reader) => match sender.send(reader).await {
+                        Ok(_) => {
+                            debug!(file_id = %id, "Sent a reader for file {id} from backend {tag}", tag = backend.tag(), id = id)
+                        }
+                        Err(e) => {
+                            error!(file_id = %id, "Failed to send file reader from backend to handler; {tag}: {error}", tag = backend.tag(), error = e)
+                        }
+                    },
+                    Err(e) => {
+                        warn!(file_id = %id, "Failed to receive file from backend {tag}: {error}", tag = backend.tag(), error = e);
+                    }
+                }
+            }
+
+            todo!("Implement download of file")
+        }
+    }
+
+    debug!("Closing background event handling");
+    task_guard.completed();
 }
 
 pub struct BackendRegistryBuilder {

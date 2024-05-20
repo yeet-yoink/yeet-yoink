@@ -4,7 +4,7 @@ use crate::file_writer::FileWriter;
 use crate::file_writer_guard::FileWriterGuard;
 use async_tempfile::TempFile;
 use axum::headers::ContentType;
-use backend_traits::{BackendCommand, BackendCommandSender, FileReceiverPlaceholder};
+use backend_traits::{BackendCommand, BackendCommandSender};
 use file_distribution::{BoxedFileReader, GetFileReaderError, WriteSummary};
 use rendezvous::RendezvousGuard;
 use shared_files::{SharedFileWriter, SharedTemporaryFile};
@@ -124,7 +124,7 @@ impl Backbone {
         }
 
         // TODO: #54 Query the backend registry for remote files
-        let (tx, rx) = channel(1);
+        let (tx, _rx) = channel(1);
         self.sender
             .send(BackboneCommand::ReceiveFile(id, tx))
             .await
@@ -197,7 +197,7 @@ pub enum BackboneCommand {
     /// Marks the file ready for distribution to other backends.
     ReadyForDistribution(ShortGuid, Arc<WriteSummary>),
     /// Downloads a file.
-    ReceiveFile(ShortGuid, Sender<FileReceiverPlaceholder>),
+    ReceiveFile(ShortGuid, Sender<BoxedFileReader>),
 }
 
 #[derive(Debug, thiserror::Error)]

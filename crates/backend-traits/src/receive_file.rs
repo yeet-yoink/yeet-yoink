@@ -14,8 +14,9 @@ pub trait ReceiveFile: Send + Sync + BackendTag {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ReceiveError {
+    // The error needs to be `Send` so that we can use it across `await` points.
     #[error(transparent)]
-    BackendSpecific(Box<dyn Error>),
+    BackendSpecific(Box<dyn Error + Send>),
     #[error("No file found for the specified ID {0}")]
     UnknownFile(ShortGuid),
     #[error("The file lease has expired for the specified ID {0}")]
