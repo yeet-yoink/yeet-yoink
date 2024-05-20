@@ -13,7 +13,7 @@ pub trait DistributeFile: Send + Sync + BackendTag {
         &self,
         id: ShortGuid,
         summary: Arc<WriteSummary>,
-        file_provider: FileProvider,
+        file_provider: Arc<FileProvider>,
     ) -> Result<(), DistributionError>;
 }
 

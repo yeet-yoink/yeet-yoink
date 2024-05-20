@@ -6,6 +6,7 @@ use backend_traits::{
 use file_distribution::FileProvider;
 use rendezvous::RendezvousGuard;
 use std::cell::Cell;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::{JoinError, JoinHandle};
@@ -95,28 +96,40 @@ impl BackendRegistry {
         cleanup_rendezvous: RendezvousGuard,
         file_accessor: FileProvider,
     ) {
+        let backends = Arc::new(backends);
+        let file_accessor = Arc::new(file_accessor);
         while let Some(event) = receiver.recv().await {
-            match event {
-                BackendCommand::DistributeFile(id, summary) => {
-                    // TODO: Handle file distribution
-                    debug!(file_id = %id, "Handling distribution of file {id}", id = id);
+            let task_guard = cleanup_rendezvous.fork();
+            let backends = backends.clone();
+            let file_accessor = file_accessor.clone();
 
-                    // TODO: #55 Spawn distribution tasks in background
+            // Spawn the task onto the executor to avoid race conditions.
+            // We do this such that uploads do not block downloads, and vice versa.
+            tokio::task::spawn(async move {
+                match event {
+                    BackendCommand::DistributeFile(id, summary) => {
+                        debug!(file_id = %id, "Handling distribution of file {id}", id = id);
 
-                    // TODO: #57 Initiate tasks in priority order?
-                    for backend in &backends {
-                        match backend
-                            .distribute_file(id, summary.clone(), file_accessor.clone())
-                            .await
-                        {
-                            Ok(_) => {}
-                            Err(e) => {
-                                warn!(file_id = %id, "Failed to distribute file using backend {tag}: {error}", tag = backend.tag(), error = e);
+                        // TODO: #55 Spawn distribution tasks in background
+
+                        // TODO: #57 Initiate tasks in priority order?
+                        for backend in backends.iter() {
+                            match backend
+                                .distribute_file(id, summary.clone(), file_accessor.clone())
+                                .await
+                            {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    warn!(file_id = %id, "Failed to distribute file using backend {tag}: {error}", tag = backend.tag(), error = e);
+                                }
                             }
                         }
                     }
                 }
-            }
+
+                debug!("Closing background event handling");
+                task_guard.completed();
+            });
         }
 
         // TODO: Wait until all currently running tasks have finished.

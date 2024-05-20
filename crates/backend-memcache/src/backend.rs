@@ -68,7 +68,7 @@ impl DistributeFile for MemcacheBackend {
         &self,
         id: ShortGuid,
         summary: Arc<WriteSummary>,
-        file_provider: FileProvider,
+        file_provider: Arc<FileProvider>,
     ) -> Result<(), DistributionError> {
         // TODO: #59 Make maximum storage size configurable.
         const ONE_MEGABYTE: usize = 1024 * 1024;
