@@ -4,7 +4,7 @@ use app_config::{
     AppConfig,
 };
 use async_trait::async_trait;
-use backend_traits::{Backend, DistributeFile, DistributionError};
+use backend_traits::{Backend, BackendTag, DistributeFile, DistributionError};
 use backend_traits::{BackendInfo, TryCreateFromConfig};
 use file_distribution::protobuf::ItemMetadata;
 use file_distribution::{BoxedFileReader, FileProvider, GetFile, WriteSummary};
@@ -54,12 +54,14 @@ impl MemcacheBackend {
     }
 }
 
-#[async_trait]
-impl DistributeFile for MemcacheBackend {
+impl BackendTag for MemcacheBackend {
     fn tag(&self) -> &str {
         &self.tag
     }
+}
 
+#[async_trait]
+impl DistributeFile for MemcacheBackend {
     async fn distribute_file(
         &self,
         id: ShortGuid,
