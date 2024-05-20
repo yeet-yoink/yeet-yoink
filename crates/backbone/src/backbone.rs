@@ -111,20 +111,21 @@ impl Backbone {
     /// Creates a new file buffer, registers it and returns a writer to it.
     pub async fn get_file(&self, id: ShortGuid) -> Result<BoxedFileReader, GetFileReaderError> {
         let inner = self.inner.read().await;
-        match inner.open.get(&id) {
-            None => Err(GetFileReaderError::UnknownFile(id)),
-            Some(file) => {
-                let reader = file.get_reader().await?;
-                let reader = FileReader::new(
-                    reader,
-                    file.content_type.clone(),
-                    file.created,
-                    file.expiration_duration,
-                    file.get_summary().await,
-                );
-                Ok(BoxedFileReader::new(reader))
-            }
+        if let Some(file) = inner.open.get(&id) {
+            let reader = file.get_reader().await?;
+            let reader = FileReader::new(
+                reader,
+                file.content_type.clone(),
+                file.created,
+                file.expiration_duration,
+                file.get_summary().await,
+            );
+            return Ok(BoxedFileReader::new(reader));
         }
+
+        // TODO: #54 Query the backend registry for remote files
+        // TODO: Have remote backends reply in order of priority
+        Err(GetFileReaderError::UnknownFile(id))
     }
 
     async fn create_new_temporary_file(id: ShortGuid) -> Result<SharedTemporaryFile, NewFileError> {
