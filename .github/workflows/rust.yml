@@ -53,6 +53,8 @@ jobs:
   codecov:
     name: Code Coverage
     runs-on: ubuntu-latest
+    env:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     steps:
       - name: Install Protocol Buffers Compiler
         uses: arduino/setup-protoc@v3
