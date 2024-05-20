@@ -41,7 +41,7 @@ pin-project = "1.1.5"
 problemdetails = { version = "0.2.1", features = ["axum"] }
 rendezvous = { version = "0.2.3", features = ["tokio", "log"] }
 serde = { version = "1.0.202", features = ["derive"] }
-shared-files = "0.1.0"
+shared-files = "0.2.0"
 shortguid = { version = "0.7.0", features = ["serde"] }
 thiserror = "1.0.61"
 tokio = { version = "1.37.0", features = ["full"] }

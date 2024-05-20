@@ -10,7 +10,7 @@ use backend_traits::{
 use backend_traits::{BackendInfo, TryCreateFromConfig};
 use bytes::Bytes;
 use file_distribution::protobuf::ItemMetadata;
-use file_distribution::{BoxedFileReader, FileProvider, GetFile, WriteSummary};
+use file_distribution::{BoxedFileReader, FileProvider, FileReaderTrait, GetFile, WriteSummary};
 use map_ok::{BoxOk, MapOk};
 use r2d2::{Pool, PooledConnection};
 use r2d2_memcache::memcache::{MemcacheError, ToMemcacheValue};
@@ -81,7 +81,11 @@ impl DistributeFile for MemcacheBackend {
         let file = file_provider.get_file(id).await?;
         let client = self.pool.get().unwrap();
 
-        let metadata = ItemMetadata::new(id, &summary);
+        let mut metadata = ItemMetadata::new(id, &summary);
+        if let Some(len) = file.file_size().exact_size() {
+            metadata.file_size_bytes = len as u64;
+        }
+
         let metadata_buf = metadata
             .serialize_to_proto()
             .map_err(|e| DistributionError::BackendSpecific(Box::new(e)))?;
@@ -116,8 +120,17 @@ impl ReceiveFile for MemcacheBackend {
         let result: Result<Option<()>, ReceiveError> = spawn_blocking(move || {
             // TODO: If possible, update the expiration time for all data and metadata chunks before attempting a read.
             let metadata = try_get_metadata(id, &client, &tag)?;
+            let data = try_get_data(id, &client, &tag)?;
 
-            todo!("Handle metadata");
+            // TODO: THere seems to be an issue here where the received length differs from the metadata length.
+            if metadata.file_size_bytes != data.len() as u64 {
+                warn!(file_id = %id, "Metadata reported size and data size mismatched for file {id} on backend {tag} ({meta} vs {file})", tag = tag, id = id, meta = metadata.file_size_bytes, file = data.len());
+                return Err(ReceiveError::IntegrityError(id))
+            }
+
+            // TODO: Check MD5
+
+            todo!("Handle result");
             return Ok(None::<()>);
         })
         .await?;
@@ -161,7 +174,9 @@ fn try_get_data(
             warn!(file_id = %id, "File {id} not found on backend {tag}", tag = tag, id = id);
             Err(ReceiveError::UnknownFile(id))
         }
-        Ok(Some(bytes)) => Ok(Bytes::from(bytes)), // TODO: Buffer to a local file instead; could reduce memory for large blobs, help with streaming from the backend, from the server and works toward #60
+        Ok(Some(bytes)) => {
+            Ok(Bytes::from(bytes)) // TODO: Buffer to a local file instead; could reduce memory for large blobs, help with streaming from the backend, from the server and works toward #60
+        }
         Err(m) => Err(ReceiveError::BackendSpecific(id, Box::new(m))),
     }
 }

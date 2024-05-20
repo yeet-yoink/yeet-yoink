@@ -4,8 +4,9 @@ package types;
 
 message ItemMetadata {
   bytes id = 1;
-  optional string file_name = 2;
-  Hashes hashes = 3;
+  uint64 file_size_bytes = 2;
+  optional string file_name = 3;
+  Hashes hashes = 4;
   // TODO: Add creation timestamp
 }
 

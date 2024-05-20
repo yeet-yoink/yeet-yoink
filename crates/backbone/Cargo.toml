@@ -11,7 +11,7 @@ file-distribution = { path = "../file-distribution" }
 hex = "0.4.3"
 metrics = { path = "../metrics" }
 rendezvous = "0.2.3"
-shared-files = "0.1.0"
+shared-files = "0.2.0"
 shortguid = "0.7.0"
 thiserror = "1.0.61"
 tokio = { version = "1.37.0", features = ["io-std", "time"] }

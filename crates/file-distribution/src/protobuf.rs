@@ -10,6 +10,7 @@ impl ItemMetadata {
     pub fn new(id: ShortGuid, summary: &Arc<WriteSummary>) -> Self {
         Self {
             id: Vec::from(id.as_bytes()),
+            file_size_bytes: summary.file_size_bytes as _,
             file_name: summary.file_name.clone(),
             hashes: Some(Hashes {
                 md5: Vec::from(summary.hashes.md5.as_slice()),

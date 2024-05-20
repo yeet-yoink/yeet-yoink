@@ -11,5 +11,6 @@ pub struct WriteSummary {
     /// The optional file name.
     pub file_name: Option<String>,
     /// The file size in bytes.
+    // TODO: Ensure this data is actually correct - could be subject to a race condition when not flushing the data properly
     pub file_size_bytes: usize,
 }

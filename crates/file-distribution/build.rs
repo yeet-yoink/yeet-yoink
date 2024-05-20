@@ -7,4 +7,6 @@ fn main() {
     config
         .compile_protos(&["../../proto/metadata.proto"], &proto_includes)
         .expect("Failed to compile protocol buffers");
+
+    println!("cargo:rerun-if-changed=../../proto/metadata.proto");
 }

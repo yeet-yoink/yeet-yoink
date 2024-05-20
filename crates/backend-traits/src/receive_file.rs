@@ -21,6 +21,8 @@ pub enum ReceiveError {
     UnknownFile(ShortGuid),
     #[error("The file lease has expired for the specified ID {0}")]
     FileExpired(ShortGuid),
+    #[error("Data integrity check failed for file ID {0}")]
+    IntegrityError(ShortGuid),
     #[error(transparent)]
     Join(#[from] tokio::task::JoinError),
 }
