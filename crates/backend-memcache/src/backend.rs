@@ -11,7 +11,7 @@ use backend_traits::{BackendInfo, TryCreateFromConfig};
 use file_distribution::protobuf::ItemMetadata;
 use file_distribution::{BoxedFileReader, FileProvider, GetFile, WriteSummary};
 use map_ok::{BoxOk, MapOk};
-use r2d2::Pool;
+use r2d2::{Pool, PooledConnection};
 use r2d2_memcache::memcache::{MemcacheError, ToMemcacheValue};
 use r2d2_memcache::MemcacheConnectionManager;
 use shortguid::ShortGuid;
@@ -112,22 +112,9 @@ impl ReceiveFile for MemcacheBackend {
     async fn receive_file(&self, id: ShortGuid) -> Result<BoxedFileReader, ReceiveError> {
         let client = self.pool.get().unwrap();
         let tag = self.tag.clone();
-        let result = spawn_blocking(move || {
+        let result: Result<Option<()>, ReceiveError> = spawn_blocking(move || {
             // TODO: If possible, update the expiration time for all data and metadata chunks before attempting a read.
-
-            // Fetch metadata.
-            let key = format!("meta-{}", id);
-            let metadata = match client.get::<Vec<u8>>(&key) {
-                Ok(None) => return Err(ReceiveError::UnknownFile(id)),
-                Ok(Some(bytes)) => match ItemMetadata::deserialize_from_proto(bytes) {
-                    Ok(metadata) => metadata,
-                    Err(e) => {
-                        warn!(file_id = %id, "Failed to decode metadata bytestream {tag}: {error}", tag = tag, error = e);
-                        return Err(ReceiveError::BackendSpecific(id, Box::new(e)))
-                    }
-                },
-                Err(m) => return Err(ReceiveError::BackendSpecific(id, Box::new(m))),
-            };
+            let metadata = try_get_metadata(id, &client, &tag)?;
 
             todo!("Handle metadata");
             return Ok(None::<()>);
@@ -137,6 +124,28 @@ impl ReceiveFile for MemcacheBackend {
         // Unwrap the potential receive error.
         let data = result?;
         todo!("Handle returning of received file")
+    }
+}
+
+fn try_get_metadata(
+    id: ShortGuid,
+    client: &PooledConnection<MemcacheConnectionManager>,
+    tag: &str,
+) -> Result<ItemMetadata, ReceiveError> {
+    let key = format!("meta-{}", id);
+    match client.get::<Vec<u8>>(&key) {
+        Ok(None) => {
+            warn!(file_id = %id, "File {id} not found on backend {tag}", tag = tag, id = id);
+            Err(ReceiveError::UnknownFile(id))
+        }
+        Ok(Some(bytes)) => match ItemMetadata::deserialize_from_proto(bytes) {
+            Ok(metadata) => Ok(metadata),
+            Err(e) => {
+                warn!(file_id = %id, "Failed to decode metadata bytestream on backend {tag}: {error}", tag = tag, error = e);
+                Err(ReceiveError::BackendSpecific(id, Box::new(e)))
+            }
+        },
+        Err(m) => Err(ReceiveError::BackendSpecific(id, Box::new(m))),
     }
 }
 
