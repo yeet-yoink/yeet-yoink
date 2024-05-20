@@ -20,7 +20,8 @@ use tokio::time::Instant;
 use tracing::info;
 
 /// The duration for which to keep each file alive.
-pub const TEMPORAL_LEASE: Duration = Duration::from_secs(5 * 60);
+// pub const TEMPORAL_LEASE: Duration = Duration::from_secs(5 * 60); // TODO: Make local storage duration configurable
+pub const TEMPORAL_LEASE: Duration = Duration::from_secs(10);
 
 /// A local file distribution manager.
 ///
@@ -172,7 +173,7 @@ impl Backbone {
                         .ok();
                 }
                 BackboneCommand::ReceiveFile(id, sender) => {
-                    info!(file_id = %id, "The file {id} is requested from the backend");
+                    info!(file_id = %id, "The file {id} was not available locally and is now requested from the registered backends");
                     backend_sender
                         .send(BackendCommand::ReceiveFile(id, sender))
                         .await

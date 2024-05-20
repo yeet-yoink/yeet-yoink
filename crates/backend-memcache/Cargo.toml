@@ -7,6 +7,7 @@ edition = "2021"
 app-config = { version = "0.1.0", path = "../app-config", features = ["memcache"] }
 async-trait = "0.1.80"
 backend-traits = { version = "0.1.0", path = "../backend-traits" }
+bytes = "1.6.0"
 file-distribution = { version = "0.1.0", path = "../file-distribution" }
 map-ok = "1.0.0"
 memcache = "0.17.2"

@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::spawn_blocking;
 use tokio_util::io::SyncIoBridge;
-use tracing::trace;
+use tracing::{trace, warn};
 
 pub struct MemcacheBackend {
     /// The tag identifying the backend.
@@ -109,8 +109,34 @@ impl DistributeFile for MemcacheBackend {
 
 #[async_trait]
 impl ReceiveFile for MemcacheBackend {
-    async fn receive_file(&self, _id: ShortGuid) -> Result<BoxedFileReader, ReceiveError> {
-        todo!("Implement receive_file for Memcache backend")
+    async fn receive_file(&self, id: ShortGuid) -> Result<BoxedFileReader, ReceiveError> {
+        let client = self.pool.get().unwrap();
+        let tag = self.tag.clone();
+        let result = spawn_blocking(move || {
+            // TODO: If possible, update the expiration time for all data and metadata chunks before attempting a read.
+
+            // Fetch metadata.
+            let key = format!("meta-{}", id);
+            let metadata = match client.get::<Vec<u8>>(&key) {
+                Ok(None) => return Err(ReceiveError::UnknownFile(id)),
+                Ok(Some(bytes)) => match ItemMetadata::deserialize_from_proto(bytes) {
+                    Ok(metadata) => metadata,
+                    Err(e) => {
+                        warn!(file_id = %id, "Failed to decode metadata bytestream {tag}: {error}", tag = tag, error = e);
+                        return Err(ReceiveError::BackendSpecific(id, Box::new(e)))
+                    }
+                },
+                Err(m) => return Err(ReceiveError::BackendSpecific(id, Box::new(m))),
+            };
+
+            todo!("Handle metadata");
+            return Ok(None::<()>);
+        })
+        .await?;
+
+        // Unwrap the potential receive error.
+        let data = result?;
+        todo!("Handle returning of received file")
     }
 }
 

@@ -23,4 +23,11 @@ impl ItemMetadata {
         self.encode(&mut metadata_buf)?;
         Ok(metadata_buf.freeze())
     }
+
+    pub fn deserialize_from_proto<B>(data: B) -> Result<Self, prost::DecodeError>
+    where
+        B: Into<Bytes>,
+    {
+        Self::decode(data.into())
+    }
 }

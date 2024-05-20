@@ -232,6 +232,7 @@ dependencies = [
  "app-config",
  "async-trait",
  "backend-traits",
+ "bytes",
  "file-distribution",
  "map-ok",
  "memcache 0.17.2",
