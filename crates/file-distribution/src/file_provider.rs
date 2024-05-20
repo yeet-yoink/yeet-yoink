@@ -2,6 +2,7 @@ use crate::BoxedFileReader;
 use async_trait::async_trait;
 use shortguid::ShortGuid;
 use std::borrow::Borrow;
+use std::error::Error;
 use std::sync::Arc;
 
 /// A wrapper around a dynamically dispatched [`GetFile`].
@@ -32,6 +33,8 @@ pub enum GetFileReaderError {
     FileExpired(ShortGuid),
     #[error("Failed to open the file for ID {0}: {1}")]
     FileError(ShortGuid, async_tempfile::Error),
+    #[error("Internal error for file with ID {0}: {1}")]
+    InternalError(ShortGuid, Box<dyn Error>),
 }
 
 impl FileProvider {

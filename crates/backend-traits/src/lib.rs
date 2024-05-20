@@ -11,7 +11,9 @@ mod receive_file;
 mod registration;
 
 pub use backend::{Backend, BackendTag};
-pub use backend_command::{BackendCommand, BackendCommandSendError, BackendCommandSender};
+pub use backend_command::{
+    BackendCommand, BackendCommandSendError, BackendCommandSender, FileReceiverPlaceholder,
+};
 pub use backend_info::BackendInfo;
 pub use distribute_file::{DistributeFile, DistributionError};
 pub use from_config::TryCreateFromConfig;

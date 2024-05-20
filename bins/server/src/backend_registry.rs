@@ -125,6 +125,10 @@ impl BackendRegistry {
                             }
                         }
                     }
+                    BackendCommand::ReceiveFile(id, sender) => {
+                        debug!(file_id = %id, "Handling download of file {id}", id = id);
+                        todo!("Implement download of file")
+                    }
                 }
 
                 debug!("Closing background event handling");

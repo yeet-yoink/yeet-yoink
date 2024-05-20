@@ -4,7 +4,7 @@ use crate::file_writer::FileWriter;
 use crate::file_writer_guard::FileWriterGuard;
 use async_tempfile::TempFile;
 use axum::headers::ContentType;
-use backend_traits::{BackendCommand, BackendCommandSender};
+use backend_traits::{BackendCommand, BackendCommandSender, FileReceiverPlaceholder};
 use file_distribution::{BoxedFileReader, GetFileReaderError, WriteSummary};
 use rendezvous::RendezvousGuard;
 use shared_files::{SharedFileWriter, SharedTemporaryFile};
@@ -13,7 +13,7 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::{mpsc, oneshot, RwLock};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
@@ -124,6 +124,14 @@ impl Backbone {
         }
 
         // TODO: #54 Query the backend registry for remote files
+        let (tx, rx) = channel(1);
+        self.sender
+            .send(BackboneCommand::ReceiveFile(id, tx))
+            .await
+            .map_err(|e| GetFileReaderError::InternalError(id, e.into()))?;
+
+        // TODO: Handle channel
+
         // TODO: #58 Have remote backends reply in order of priority
         Err(GetFileReaderError::UnknownFile(id))
     }
@@ -163,6 +171,13 @@ impl Backbone {
                         .await
                         .ok();
                 }
+                BackboneCommand::ReceiveFile(id, sender) => {
+                    info!(file_id = %id, "The file {id} is requested from the backend");
+                    backend_sender
+                        .send(BackendCommand::ReceiveFile(id, sender))
+                        .await
+                        .ok();
+                }
             }
         }
 
@@ -181,6 +196,8 @@ pub enum BackboneCommand {
     RemoveWriter(ShortGuid),
     /// Marks the file ready for distribution to other backends.
     ReadyForDistribution(ShortGuid, Arc<WriteSummary>),
+    /// Downloads a file.
+    ReceiveFile(ShortGuid, Sender<FileReceiverPlaceholder>),
 }
 
 #[derive(Debug, thiserror::Error)]

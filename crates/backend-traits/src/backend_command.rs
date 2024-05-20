@@ -6,6 +6,7 @@ use tokio::sync::mpsc::Sender;
 
 pub enum BackendCommand {
     DistributeFile(ShortGuid, Arc<WriteSummary>),
+    ReceiveFile(ShortGuid, Sender<FileReceiverPlaceholder>),
 }
 
 pub struct BackendCommandSender {
@@ -27,3 +28,6 @@ impl From<Sender<BackendCommand>> for BackendCommandSender {
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 pub struct BackendCommandSendError(#[from] SendError<BackendCommand>);
+
+// TODO: Implement meaningful event type.
+pub struct FileReceiverPlaceholder;

@@ -205,5 +205,14 @@ fn map_file_reader_error_to_response(value: GetFileReaderError) -> Response {
                 .with_value("error", e.to_string())
                 .into_response()
         }
+        GetFileReaderError::InternalError(id, e) => {
+            problemdetails::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .with_title("Internal server error")
+                .with_detail(format!("Unable to process file: {e}"))
+                .with_instance(format!("/yoink/{id}"))
+                .with_value("id", id.to_string())
+                .with_value("error", e.to_string())
+                .into_response()
+        }
     }
 }
