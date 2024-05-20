@@ -103,7 +103,7 @@ impl BackendRegistry {
 
                     // TODO: #55 Spawn distribution tasks in background
 
-                    // TODO: Initiate tasks in priority order?
+                    // TODO: #57 Initiate tasks in priority order?
                     for backend in &backends {
                         match backend
                             .distribute_file(id, summary.clone(), file_accessor.clone())

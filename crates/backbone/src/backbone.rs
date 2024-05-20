@@ -124,7 +124,7 @@ impl Backbone {
         }
 
         // TODO: #54 Query the backend registry for remote files
-        // TODO: Have remote backends reply in order of priority
+        // TODO: #58 Have remote backends reply in order of priority
         Err(GetFileReaderError::UnknownFile(id))
     }
 
