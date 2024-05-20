@@ -4,7 +4,9 @@ use app_config::{
     AppConfig,
 };
 use async_trait::async_trait;
-use backend_traits::{Backend, BackendTag, DistributeFile, DistributionError};
+use backend_traits::{
+    Backend, BackendTag, DistributeFile, DistributionError, ReceiveError, ReceiveFile,
+};
 use backend_traits::{BackendInfo, TryCreateFromConfig};
 use file_distribution::protobuf::ItemMetadata;
 use file_distribution::{BoxedFileReader, FileProvider, GetFile, WriteSummary};
@@ -102,6 +104,13 @@ impl DistributeFile for MemcacheBackend {
             Ok(()) => Ok(()),
             Err(e) => Err(DistributionError::BackendSpecific(Box::new(e))),
         }
+    }
+}
+
+#[async_trait]
+impl ReceiveFile for MemcacheBackend {
+    async fn receive_file(&self, _id: ShortGuid) -> Result<BoxedFileReader, ReceiveError> {
+        todo!("Implement receive_file for Memcache backend")
     }
 }
 

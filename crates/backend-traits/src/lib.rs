@@ -15,4 +15,5 @@ pub use backend_command::{BackendCommand, BackendCommandSendError, BackendComman
 pub use backend_info::BackendInfo;
 pub use distribute_file::{DistributeFile, DistributionError};
 pub use from_config::TryCreateFromConfig;
+pub use receive_file::{ReceiveError, ReceiveFile};
 pub use registration::{BackendRegistration, RegisterBackendError};
