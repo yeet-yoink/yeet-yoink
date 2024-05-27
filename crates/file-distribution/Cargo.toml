@@ -17,7 +17,7 @@ thiserror = "1.0.60"
 tokio = { version = "1.37.0", default-features = false, features = ["time"] }
 
 [build-dependencies]
-prost-build = "0.12.4"
+prost-build = "0.12.6"
 
 [package.metadata.docs.rs]
 all-features = true
