@@ -9,7 +9,7 @@ memcache = []
 [dependencies]
 clap = "4.5.4"
 config = "0.13.4"
-serde = "1.0.202"
+serde = "1.0.203"
 tracing = "0.1.40"
 anyhow = "1.0.86"
 matches = "0.1.10"
