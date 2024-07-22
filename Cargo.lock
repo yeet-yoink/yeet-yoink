@@ -1100,9 +1100,9 @@ checksum = "90ed8c1e510134f979dbc4f070f87d4313098b704861a105fe34231c70a3901c"
 
 [[package]]
 name = "map-ok"
-version = "0.1.0"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04e700ef76907db3c41cc6b58563309331837c1b0a76524585c4f1f943c0e12e"
+checksum = "865d498d5ef7e58564f3d9f10d5133c9afedde2c635558fbe38b704030849ee7"
 
 [[package]]
 name = "matchers"
