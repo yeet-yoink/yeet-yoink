@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 hyper = "0.14.28"
 lazy_static = "1.4.0"
-prometheus-client = "0.22.2"
+prometheus-client = "0.22.3"
 
 [package.metadata.docs.rs]
 all-features = true
