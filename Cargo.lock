@@ -2040,9 +2040,9 @@ dependencies = [
 
 [[package]]
 name = "shared-files"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8054abf152941b8916d22da92a3e00c5b3f7e1e35a86a8ed76690c1ec38d3dd4"
+checksum = "028b1e628030b489715ab5582f1cc8235dbb6ca9f293aa6ff0adbcab0fdad1c4"
 dependencies = [
  "async-tempfile",
  "async-trait",
