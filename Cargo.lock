@@ -2045,11 +2045,11 @@ dependencies = [
 
 [[package]]
 name = "shortguid"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "305b50c1963b3888168654c7504c2249e215a7b7c06a3421fc1163828c63ad28"
+checksum = "f934e9eca782a8f3a376e0f6f60b599e1b754ed0bada3bdb29ce222e899e0d06"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.22.1",
  "serde",
  "uuid",
 ]
@@ -2475,6 +2475,7 @@ checksum = "a183cf7feeba97b4dd1c0d46788634f6221d87fa961b305bed08c851829efcc0"
 dependencies = [
  "atomic",
  "getrandom",
+ "rand",
  "serde",
 ]
 
