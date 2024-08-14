@@ -13,7 +13,7 @@ memcache = "0.17.2"
 r2d2 = "0.8.10"
 r2d2-memcache = "0.6.0"
 serde = { version = "1.0.203", features = ["derive"] }
-shortguid = "0.6.0"
+shortguid = "0.7.0"
 thiserror = "1.0.63"
 tokio = { version = "1.39.2", default-features = false, features = ["rt"] }
 tokio-util = { version = "0.7.11", features = ["io", "io-util"] }
