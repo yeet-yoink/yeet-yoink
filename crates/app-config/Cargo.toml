@@ -14,7 +14,7 @@ tracing = "0.1.40"
 anyhow = "1.0.86"
 matches = "0.1.10"
 thiserror = "1.0.63"
-url = "2.5.0"
+url = "2.5.3"
 
 [dev-dependencies]
 serde_yaml = "0.9.34"
