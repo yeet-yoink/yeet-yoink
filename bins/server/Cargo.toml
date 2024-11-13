@@ -31,7 +31,7 @@ dotenvy = "0.15.7"
 exitcode = "1.1.2"
 file-distribution = { version = "0.1", path = "../../crates/file-distribution" }
 futures = "0.3.30"
-headers-content-md5 = "0.1.1"
+headers-content-md5 = "0.2.0"
 hex = "0.4.3"
 hyper = { version = "0.14.28", features = ["http1", "http2", "server", "h2"] }
 metrics = { version = "0.1.0", path = "../../crates/metrics" }
