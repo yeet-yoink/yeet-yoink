@@ -234,7 +234,7 @@ dependencies = [
  "backend-traits",
  "file-distribution",
  "map-ok",
- "memcache 0.17.2",
+ "memcache 0.18.0",
  "r2d2",
  "r2d2-memcache",
  "serde",
@@ -1315,9 +1315,9 @@ dependencies = [
 
 [[package]]
 name = "memcache"
-version = "0.17.2"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0396084c5d5e2ef2c480a51933b56e9673898f14657212eebbffcbcc12c7153a"
+checksum = "7ed6ed93699861dad475e9af9c10b7f76f0bfdfa2be774d2b8dd6fa19e6f906d"
 dependencies = [
  "byteorder",
  "enum_dispatch",
