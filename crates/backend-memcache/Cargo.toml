@@ -12,7 +12,7 @@ map-ok = "1.0.0"
 memcache = "0.18.0"
 r2d2 = "0.8.10"
 r2d2-memcache = "0.6.0"
-serde = { version = "1.0.203", features = ["derive"] }
+serde = { version = "1.0.215", features = ["derive"] }
 shortguid = "0.7.0"
 thiserror = "2.0.3"
 tokio = { version = "1.39.2", default-features = false, features = ["rt"] }
