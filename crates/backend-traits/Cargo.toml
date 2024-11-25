@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 app-config = { version = "0.1.0", path = "../app-config" }
-async-trait = "0.1.80"
+async-trait = "0.1.83"
 file-distribution = { version = "0.1.0", path = "../file-distribution" }
 shortguid = "0.7.0"
 thiserror = "2.0.3"
