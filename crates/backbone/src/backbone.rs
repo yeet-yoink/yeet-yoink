@@ -19,9 +19,6 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use tracing::info;
 
-/// The duration for which to keep each file alive.
-pub const TEMPORAL_LEASE: Duration = Duration::from_secs(5 * 60);
-
 /// A local file distribution manager.
 ///
 /// This instance keeps track of currently processed files.
@@ -29,6 +26,8 @@ pub struct Backbone {
     inner: Arc<RwLock<Inner>>,
     sender: Sender<BackboneCommand>,
     loop_handle: JoinHandle<()>,
+    /// The duration for which to keep each buffered file available to readers.
+    temporal_lease: Duration,
 }
 
 struct Inner {
@@ -36,7 +35,11 @@ struct Inner {
 }
 
 impl Backbone {
-    pub fn new(backend_sender: BackendCommandSender, cleanup_rendezvous: RendezvousGuard) -> Self {
+    pub fn new(
+        backend_sender: BackendCommandSender,
+        cleanup_rendezvous: RendezvousGuard,
+        temporal_lease: Duration,
+    ) -> Self {
         let (sender, receiver) = mpsc::channel(1024);
         let inner = Arc::new(RwLock::new(Inner {
             open: HashMap::default(),
@@ -52,6 +55,7 @@ impl Backbone {
             inner,
             sender,
             loop_handle,
+            temporal_lease,
         }
     }
 
@@ -76,7 +80,7 @@ impl Backbone {
         let mut inner = self.inner.write().await;
         let (sender, receiver) = oneshot::channel();
 
-        let temporal_lease = TEMPORAL_LEASE;
+        let temporal_lease = self.temporal_lease;
 
         // This needs to happen synchronously so that the moment we return the writer,
         // we know the entry exists.

@@ -85,7 +85,11 @@ async fn main() -> ExitCode {
     let registry = registry.build();
     let backend_sender = registry.get_sender().expect("failed to get backend sender");
 
-    let backbone = Arc::new(Backbone::new(backend_sender, rendezvous.fork_guard()));
+    let backbone = Arc::new(Backbone::new(
+        backend_sender,
+        rendezvous.fork_guard(),
+        cfg.cache.lease_duration(),
+    ));
     file_accessor.set_backbone(&backbone);
 
     // The application state is shared with the Axum servers.

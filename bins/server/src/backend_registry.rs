@@ -4,8 +4,10 @@ use backend_traits::{
     TryCreateFromConfig,
 };
 use file_distribution::FileProvider;
+use futures::future::join_all;
 use rendezvous::RendezvousGuard;
 use std::cell::Cell;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::{JoinError, JoinHandle};
@@ -35,7 +37,7 @@ impl BackendRegistry {
     ) -> Self {
         let (sender, receiver) = mpsc::channel(EVENT_BUFFER_SIZE);
         let handle = tokio::spawn(Self::handle_events(
-            backends,
+            Arc::new(backends),
             receiver,
             cleanup_rendezvous,
             file_accessor,
@@ -57,7 +59,7 @@ impl BackendRegistry {
     }
 
     async fn handle_events(
-        backends: Vec<Backend>,
+        backends: Arc<Vec<Backend>>,
         mut receiver: Receiver<BackendCommand>,
         cleanup_rendezvous: RendezvousGuard,
         file_accessor: FileProvider,
@@ -65,28 +67,35 @@ impl BackendRegistry {
         while let Some(event) = receiver.recv().await {
             match event {
                 BackendCommand::DistributeFile(id, summary) => {
-                    // TODO: Handle file distribution
                     debug!(file_id = %id, "Handling distribution of file {id}", id = id);
 
-                    // TODO: Spawn distribution tasks in background
-
-                    // TODO: Initiate tasks in priority order?
-                    for backend in &backends {
-                        match backend
-                            .distribute_file(id, summary.clone(), file_accessor.clone())
-                            .await
-                        {
-                            Ok(_) => {}
-                            Err(e) => {
-                                warn!(file_id = %id, "Failed to distribute file using backend {tag}: {error}", tag = backend.tag(), error = e);
+                    // Distribute to all backends concurrently in a detached task so
+                    // that the event loop stays free to accept further commands. The
+                    // forked rendezvous guard keeps graceful shutdown waiting until
+                    // the distribution has finished.
+                    // TODO(#56-58): run backends in configured priority order.
+                    let backends = backends.clone();
+                    let file_accessor = file_accessor.clone();
+                    let guard = cleanup_rendezvous.fork();
+                    tokio::spawn(async move {
+                        let distributions = backends.iter().map(|backend| {
+                            let file_accessor = file_accessor.clone();
+                            let summary = summary.clone();
+                            async move {
+                                if let Err(e) =
+                                    backend.distribute_file(id, summary, file_accessor).await
+                                {
+                                    warn!(file_id = %id, "Failed to distribute file using backend {tag}: {error}", tag = backend.tag(), error = e);
+                                }
                             }
-                        }
-                    }
+                        });
+                        join_all(distributions).await;
+                        guard.completed();
+                    });
                 }
             }
         }
 
-        // TODO: Wait until all currently running tasks have finished.
         debug!("Closing backend event loop");
         cleanup_rendezvous.completed();
     }
