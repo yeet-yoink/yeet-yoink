@@ -1,6 +1,6 @@
 use file_distribution::hash::{HashMd5, HashSha256};
 use file_distribution::{FileHashes, WriteSummary};
-use shared_files::{prelude::*, SharedTemporaryFileWriter};
+use shared_files::{SharedTemporaryFileWriter, prelude::*};
 use shortguid::ShortGuid;
 use std::io::{Error, ErrorKind};
 use std::sync::Arc;

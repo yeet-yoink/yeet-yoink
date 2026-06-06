@@ -1,7 +1,7 @@
 use crate::connection_string::MemcacheConnectionStringWrapper;
 use app_config::{
-    memcache::{MemcacheBackendConfig, DEFAULT_EXPIRATION},
     AppConfig,
+    memcache::{DEFAULT_EXPIRATION, MemcacheBackendConfig},
 };
 use async_trait::async_trait;
 use backend_traits::{Backend, DistributeFile, DistributionError};
@@ -10,8 +10,8 @@ use file_distribution::protobuf::ItemMetadata;
 use file_distribution::{BoxedFileReader, FileProvider, GetFile, WriteSummary};
 use map_ok::{BoxOk, MapOk};
 use r2d2::Pool;
-use r2d2_memcache::memcache::{MemcacheError, ToMemcacheValue};
 use r2d2_memcache::MemcacheConnectionManager;
+use r2d2_memcache::memcache::{MemcacheError, ToMemcacheValue};
 use shortguid::ShortGuid;
 use std::cell::Cell;
 use std::sync::Arc;
@@ -130,10 +130,7 @@ where
             std::io::copy(&mut bridge, stream)?;
             Ok(())
         } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Source already read to end",
-            ))
+            Err(std::io::Error::other("Source already read to end"))
         }
     }
 }

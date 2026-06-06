@@ -1,10 +1,9 @@
 //! Contains the `/stop` endpoint filter.
 
 use crate::AppState;
-use axum::body::HttpBody;
+use axum::Router;
 use axum::extract::State;
 use axum::routing::post;
-use axum::Router;
 use tracing::warn;
 
 pub trait ShutdownRoutes {
@@ -16,10 +15,7 @@ pub trait ShutdownRoutes {
     fn map_shutdown_endpoint(self) -> Self;
 }
 
-impl<B> ShutdownRoutes for Router<AppState, B>
-where
-    B: HttpBody + Send + 'static,
-{
+impl ShutdownRoutes for Router<AppState> {
     // Ensure HttpCallMetricTracker is updated.
     fn map_shutdown_endpoint(self) -> Self {
         self.route("/stop", post(shutdown))

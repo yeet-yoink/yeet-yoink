@@ -1,8 +1,8 @@
 use file_distribution::WriteSummary;
 use shortguid::ShortGuid;
 use std::sync::Arc;
-use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::error::SendError;
 
 pub enum BackendCommand {
     DistributeFile(ShortGuid, Arc<WriteSummary>),

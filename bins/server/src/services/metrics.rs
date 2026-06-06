@@ -1,19 +1,14 @@
-use hyper::service::Service;
-use hyper::{Request, StatusCode, Version};
-use pin_project::pin_project;
-
-use axum::body::BoxBody;
-use axum::http::Response;
-use axum::response::IntoResponse;
-use hyper::body::HttpBody;
+use axum::http::{Method, Request, StatusCode, Version};
+use axum::response::{IntoResponse, Response};
 use metrics::http::HttpMetrics;
+use pin_project::pin_project;
 use std::cell::Cell;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::time::Instant;
-use tower::Layer;
+use tower::{Layer, Service};
 use tracing::debug;
 
 /// A middleware for call metrics. Uses [`HttpMetrics`].
@@ -45,9 +40,8 @@ impl<S, B> Service<Request<B>> for HttpCallMetrics<S>
 where
     S: Service<Request<B>>,
     S::Response: IntoResponse,
-    B: HttpBody,
 {
-    type Response = Response<BoxBody>;
+    type Response = Response;
     type Error = S::Error;
     type Future = HttpCallMetricsFuture<S::Future>;
 
@@ -93,7 +87,7 @@ where
     F: Future<Output = Result<R, E>>,
     R: IntoResponse,
 {
-    type Output = Result<Response<BoxBody>, E>;
+    type Output = Result<Response, E>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // Note that this method will be called at least twice.
@@ -126,7 +120,7 @@ where
 /// due to the use of [`pin_project`](pin_project::pin_project).
 struct HttpCallMetricTracker {
     version: Version,
-    method: hyper::Method,
+    method: Method,
     path_base: String,
     start: Instant,
     state: Cell<ResultState>,
@@ -208,14 +202,14 @@ impl Drop for HttpCallMetricTracker {
             ResultState::Result(status, version) => {
                 let duration = self.duration();
                 debug!(
-                        "Done processing {version:?} {method} {path}: {response_version:?} {response_status} - {duration:?}",
-                        version = self.version,
-                        method = self.method,
-                        path = self.path_full,
-                        duration = duration,
-                        response_version = version,
-                        response_status = status
-                    );
+                    "Done processing {version:?} {method} {path}: {response_version:?} {response_status} - {duration:?}",
+                    version = self.version,
+                    method = self.method,
+                    path = self.path_full,
+                    duration = duration,
+                    response_version = version,
+                    response_status = status
+                );
                 HttpMetrics::track(
                     &self.path_base,
                     self.method.clone(),

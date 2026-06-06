@@ -1,5 +1,3 @@
-use sha2::digest::consts::U32;
-use sha2::digest::generic_array::GenericArray;
 use sha2::Digest;
 
 /// An MD5 hash.
@@ -8,11 +6,11 @@ pub struct HashMd5(md5::Context);
 /// A SHA-256 hash.
 pub struct HashSha256(sha2::Sha256);
 
-/// Alias for a SHA-256 hash digest.
+/// Alias for an MD5 hash digest.
 pub type Md5Digest = md5::Digest;
 
 /// Alias for a SHA-256 hash digest.
-pub type Sha256Digest = GenericArray<u8, U32>;
+pub type Sha256Digest = [u8; 32];
 
 impl HashMd5 {
     pub fn new() -> Self {
@@ -24,7 +22,7 @@ impl HashMd5 {
     }
 
     pub fn finalize(self) -> Md5Digest {
-        self.0.compute()
+        self.0.finalize()
     }
 }
 
@@ -38,8 +36,9 @@ impl HashSha256 {
     }
 
     pub fn finalize(self) -> Sha256Digest {
-        let mut hash = GenericArray::from([0u8; 32]);
-        self.0.finalize_into(&mut hash);
+        let digest = self.0.finalize();
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(&digest);
         hash
     }
 }

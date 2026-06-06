@@ -1,5 +1,5 @@
 use crate::Backbone;
-use axum::async_trait;
+use async_trait::async_trait;
 use file_distribution::{BoxedFileReader, FileAccessorError, GetFile};
 use shortguid::ShortGuid;
 use std::borrow::Borrow;

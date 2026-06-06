@@ -1,12 +1,12 @@
 [package]
 name = "metrics"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
-hyper = "0.14.28"
+http = "1.4.1"
 lazy_static = "1.5.0"
-prometheus-client = "0.22.3"
+prometheus-client = "0.24.1"
 
 [package.metadata.docs.rs]
 all-features = true

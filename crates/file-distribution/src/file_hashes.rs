@@ -26,9 +26,9 @@ impl Display for FileHashes {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "MD5 {md5:x}, SHA256 {sha256:x}",
+            "MD5 {md5:x}, SHA256 {sha256}",
             md5 = self.md5,
-            sha256 = self.sha256
+            sha256 = hex::encode(self.sha256)
         )
     }
 }

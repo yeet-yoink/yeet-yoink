@@ -1,6 +1,6 @@
 //! Contains HTTP metrics related code, notably [`HttpMetrics`].
 
-use hyper::Method;
+use http::Method;
 use lazy_static::lazy_static;
 use prometheus_client::encoding::LabelValueEncoder;
 use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};

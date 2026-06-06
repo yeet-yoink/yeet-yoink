@@ -7,50 +7,51 @@ keywords = ["file-storage", "cloud-storage"]
 repository = "https://github.com/sunsided/yeet-yoink"
 readme = "README.md"
 authors = ["Markus Mayer"]
-edition = "2021"
-rust-version = "1.68.0"
+edition = "2024"
+rust-version = "1.95.0"
 
 [features]
 default = ["memcache"]
 memcache = ["dep:backend-memcache", "app-config/memcache"]
 
 [dependencies]
-anyhow = "1.0.95"
+anyhow = "1.0.102"
 app-config = { version = "0.1", path = "../../crates/app-config" }
-axum = { version = "0.6.20", features = ["http2", "headers", "macros", "json"] }
+axum = { version = "0.8.9", features = ["http2", "macros", "json"] }
+axum-extra = { version = "0.12.6", features = ["typed-header"] }
 backbone = { version = "0.1.0", path = "../../crates/backbone" }
 backend-memcache = { version = "0.1.0", path = "../../crates/backend-memcache", optional = true }
 backend-traits = { version = "0.1.0", path = "../../crates/backend-traits" }
 base64 = "0.22.1"
-chrono = "0.4.38"
-clap = { version = "4.4.11", features = ["env"] }
+bytes = "1.11.1"
+chrono = "0.4.45"
+clap = { version = "4.6.1", features = ["env"] }
 crossbeam = "0.8.4"
-ctrlc = { version = "3.4.5", features = ["termination"] }
-directories = "5.0.1"
+ctrlc = { version = "3.5.2", features = ["termination"] }
+directories = "6.0.0"
 dotenvy = "0.15.7"
 exitcode = "1.1.2"
 file-distribution = { version = "0.1", path = "../../crates/file-distribution" }
-futures = "0.3.30"
-headers-content-md5 = "0.1.1"
+futures = "0.3.32"
+headers-content-md5 = "0.2.0"
 hex = "0.4.3"
-hyper = { version = "0.14.28", features = ["http1", "http2", "server", "h2"] }
 metrics = { version = "0.1.0", path = "../../crates/metrics" }
-mime-db = "1.7.0"
-percent-encoding = "2.3.1"
-pin-project = "1.1.5"
-problemdetails = { version = "0.2.1", features = ["axum"] }
-rendezvous = { version = "0.2.3", features = ["tokio", "log"] }
-serde = { version = "1.0.203", features = ["derive"] }
-shared-files = "0.2.0"
+mime-db = "1.8.0"
+percent-encoding = "2.3.2"
+pin-project = "1.1.13"
+problemdetails = { version = "0.7.0", features = ["axum"] }
+rendezvous = { version = "0.3.0", features = ["tokio", "log"] }
+serde = { version = "1.0.228", features = ["derive"] }
+shared-files = "0.4.0"
 shortguid = { version = "0.7.0", features = ["serde"] }
-thiserror = "2.0.3"
-tokio = { version = "1.39.2", features = ["full"] }
-tokio-stream = { version = "0.1.16", features = ["net"] }
-tokio-util = { version = "0.7.11", features = ["io", "io-util"] }
-tower = { version = "0.4.13", features = ["tokio"] }
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter", "parking_lot", "tracing-log", "json"] }
-uuid = { version = "1.8.0", features = ["v1", "rng", "serde"] }
+thiserror = "2.0.18"
+tokio = { version = "1.52.3", features = ["full"] }
+tokio-stream = { version = "0.1.18", features = ["net"] }
+tokio-util = { version = "0.7.18", features = ["io", "io-util"] }
+tower = "0.5.3"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "parking_lot", "tracing-log", "json"] }
+uuid = { version = "1.23.2", features = ["v1", "rng", "serde"] }
 
 [dev-dependencies]
 serde_yaml = "0.9.34"

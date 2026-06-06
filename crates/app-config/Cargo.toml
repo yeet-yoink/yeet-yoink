@@ -1,20 +1,20 @@
 [package]
 name = "app-config"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 memcache = []
 
 [dependencies]
-clap = "4.5.4"
-config = "0.14.1"
-serde = "1.0.203"
-tracing = "0.1.40"
-anyhow = "1.0.95"
+clap = "4.6.1"
+config = "0.15.23"
+serde = { version = "1.0.228", features = ["derive"] }
+tracing = "0.1.44"
+anyhow = "1.0.102"
 matches = "0.1.10"
-thiserror = "2.0.3"
-url = "2.5.3"
+thiserror = "2.0.18"
+url = "2.5.8"
 
 [dev-dependencies]
 serde_yaml = "0.9.34"

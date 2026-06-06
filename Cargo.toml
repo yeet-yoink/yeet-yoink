@@ -4,4 +4,4 @@ members =[
     "bins/*",
     "crates/*"
 ]
-resolver = "2"
+resolver = "3"

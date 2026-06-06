@@ -1,21 +1,22 @@
 [package]
 name = "backbone"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
-async-tempfile = { version = "0.5.0", features = ["uuid"] }
-axum = { version = "0.6", default-features = false, features = ["headers"] }
+async-tempfile = { version = "0.8.0", features = ["uuid"] }
+async-trait = "0.1.89"
+axum-extra = { version = "0.12.6", default-features = false, features = ["typed-header"] }
 backend-traits = { version = "0.1.0", path = "../backend-traits" }
 file-distribution = { path = "../file-distribution" }
 hex = "0.4.3"
 metrics = { path = "../metrics" }
-rendezvous = "0.2.3"
-shared-files = "0.2.0"
+rendezvous = "0.3.0"
+shared-files = "0.4.0"
 shortguid = "0.7.0"
-thiserror = "2.0.3"
-tokio = { version = "1.39.2", features = ["io-std", "time"] }
-tracing = "0.1.40"
+thiserror = "2.0.18"
+tokio = { version = "1.52.3", features = ["io-std", "time"] }
+tracing = "0.1.44"
 
 [package.metadata.docs.rs]
 all-features = true

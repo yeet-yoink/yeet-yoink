@@ -13,7 +13,7 @@ pub trait FileReaderTrait: AsyncRead + Send + Unpin {
     fn expiration_date(&self) -> Instant;
     fn file_size(&self) -> FileSize;
     fn file_age(&self) -> Duration;
-    fn content_type(&self) -> Option<Cow<str>>;
+    fn content_type(&self) -> Option<Cow<'_, str>>;
 }
 
 pub struct BoxedFileReader(Box<dyn FileReaderTrait>);
@@ -31,7 +31,7 @@ impl FileReaderTrait for BoxedFileReader {
     fn file_age(&self) -> Duration {
         self.0.file_age()
     }
-    fn content_type(&self) -> Option<Cow<str>> {
+    fn content_type(&self) -> Option<Cow<'_, str>> {
         self.0.content_type()
     }
 }

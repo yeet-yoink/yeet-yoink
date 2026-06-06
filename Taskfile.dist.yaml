@@ -1,0 +1,131 @@
+version: '3'
+
+vars:
+  PROFILE: '{{ .PROFILE | default "debug" }}'
+  PROFILE_FLAG: '{{ if eq .PROFILE "release" }}--release{{ end }}'
+
+tasks:
+  default:
+    cmds:
+      - task --list --sort=none
+    silent: true
+
+  build:
+    desc: Compile the workspace (PROFILE=debug|release)
+    preconditions:
+      - sh: command -v cargo
+        msg: "cargo not found — install Rust from https://rustup.rs/"
+      - sh: command -v protoc
+        msg: "protoc not found — install the Protocol Buffers compiler (apt install protobuf-compiler / brew install protobuf)"
+    cmds:
+      - cargo build --workspace --all-targets {{.PROFILE_FLAG}}
+
+  run:
+    desc: Run the yeet-yoink server (pass args after --)
+    preconditions:
+      - sh: command -v cargo
+        msg: "cargo not found — install Rust from https://rustup.rs/"
+      - sh: command -v protoc
+        msg: "protoc not found — install the Protocol Buffers compiler"
+    cmds:
+      - cargo run -p yeet-yoink {{.PROFILE_FLAG}} -- {{.CLI_ARGS}}
+
+  test:
+    desc: Run the test suite with nextest (all features)
+    preconditions:
+      - sh: command -v cargo-nextest
+        msg: "cargo-nextest not found — cargo install cargo-nextest"
+      - sh: command -v protoc
+        msg: "protoc not found — install the Protocol Buffers compiler"
+    cmds:
+      - cargo nextest run --workspace --all-features {{.CLI_ARGS}}
+
+  test:docs:
+    desc: Run documentation tests (not covered by nextest)
+    preconditions:
+      - sh: command -v protoc
+        msg: "protoc not found — install the Protocol Buffers compiler"
+    cmds:
+      - cargo test --doc --workspace --all-features
+
+  fmt:
+    desc: Format all code
+    aliases: [format]
+    preconditions:
+      - sh: command -v cargo
+        msg: "cargo not found — install Rust from https://rustup.rs/"
+    cmds:
+      - cargo fmt --all
+
+  fmt:check:
+    desc: Check formatting without modifying files
+    cmds:
+      - cargo fmt --all --check
+
+  lint:
+    desc: Lint with clippy (read-only)
+    preconditions:
+      - sh: command -v protoc
+        msg: "protoc not found — install the Protocol Buffers compiler"
+    cmds:
+      - cargo clippy --workspace --all-targets --all-features
+
+  lint:fix:
+    desc: Lint and auto-apply fixes
+    aliases: [fix]
+    preconditions:
+      - sh: command -v protoc
+        msg: "protoc not found — install the Protocol Buffers compiler"
+    cmds:
+      - cargo clippy --fix --workspace --all-targets --all-features --allow-dirty --allow-staged
+
+  check:
+    desc: All static checks (format + lint)
+    cmds:
+      - task: fmt:check
+      - task: lint
+
+  ci:
+    desc: Full CI sequence (format check, build, test)
+    cmds:
+      - task: fmt:check
+      - task: build
+      - task: test
+
+  coverage:
+    desc: Generate an LCOV coverage report (lcov.info)
+    preconditions:
+      - sh: command -v cargo-llvm-cov
+        msg: "cargo-llvm-cov not found — cargo install cargo-llvm-cov"
+      - sh: command -v protoc
+        msg: "protoc not found — install the Protocol Buffers compiler"
+    cmds:
+      - cargo llvm-cov nextest --all-features --workspace --lcov --output-path lcov.info
+
+  docs:
+    desc: Build API documentation
+    preconditions:
+      - sh: command -v protoc
+        msg: "protoc not found — install the Protocol Buffers compiler"
+    cmds:
+      - cargo doc --workspace --no-deps
+
+  docs:open:
+    desc: Build and open API documentation
+    preconditions:
+      - sh: command -v protoc
+        msg: "protoc not found — install the Protocol Buffers compiler"
+    cmds:
+      - cargo doc --workspace --no-deps --open
+
+  update:
+    desc: Update dependencies to the latest compatible versions
+    cmds:
+      - cargo update
+
+  clean:
+    desc: Remove build artifacts
+    status:
+      - test ! -d target
+    cmds:
+      - cargo clean

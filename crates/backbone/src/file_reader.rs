@@ -1,4 +1,4 @@
-use axum::headers::ContentType;
+use axum_extra::headers::ContentType;
 use file_distribution::{FileReaderTrait, WriteSummary};
 use metrics::transfer::{TransferMethod, TransferMetrics};
 use shared_files::{FileSize, SharedTemporaryFileReader};
@@ -53,7 +53,7 @@ impl FileReader {
         Instant::now() - self.created
     }
 
-    pub fn content_type(&self) -> Option<Cow<str>> {
+    pub fn content_type(&self) -> Option<Cow<'_, str>> {
         self.content_type
             .as_ref()
             .map(|content_type| Cow::from(content_type.as_str()))
@@ -77,7 +77,7 @@ impl FileReaderTrait for FileReader {
         self.file_age()
     }
 
-    fn content_type(&self) -> Option<Cow<str>> {
+    fn content_type(&self) -> Option<Cow<'_, str>> {
         self.content_type()
     }
 }

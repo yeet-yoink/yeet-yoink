@@ -1,14 +1,14 @@
 use crate::backbone::BackboneCommand;
 use crate::file_writer_guard::WriteResult;
-use axum::headers::ContentType;
+use axum_extra::headers::ContentType;
 use file_distribution::{GetFileReaderError, WriteSummary};
 use shared_files::{SharedTemporaryFile, SharedTemporaryFileReader};
 use shortguid::ShortGuid;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::RwLock;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver;
-use tokio::sync::RwLock;
 use tokio::time::Instant;
 use tracing::{info, warn};
 
@@ -45,7 +45,9 @@ impl FileRecord {
             file: Some(file),
             summary: None,
         }));
-        let _ = tokio::spawn(Self::lifetime_handler(
+        // The spawned task is detached intentionally; its lifetime is managed
+        // through the backbone command channel and the rendezvous guard.
+        tokio::spawn(Self::lifetime_handler(
             id,
             inner.clone(),
             backbone_command,

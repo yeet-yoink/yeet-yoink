@@ -9,15 +9,14 @@ use axum::Router;
 use backbone::{Backbone, FileAccessorBridge};
 use clap::ArgMatches;
 use directories::ProjectDirs;
-use futures::stream::FuturesUnordered;
 use futures::StreamExt;
-use hyper::Server;
+use futures::stream::FuturesUnordered;
 use rendezvous::Rendezvous;
 use std::net::SocketAddr;
 use std::process::ExitCode;
 use std::sync::Arc;
+use tokio::net::TcpListener;
 use tokio::sync::broadcast;
-use tower::ServiceBuilder;
 use tracing::{debug, error, info, warn};
 
 use crate::backend_registry::BackendRegistry;
@@ -129,10 +128,6 @@ async fn serve_requests(matches: ArgMatches, app_state: AppState) -> Result<(), 
         .with_state(app_state)
         .layer(services::HttpCallMetricsLayer);
 
-    let make_svc = app.into_make_service();
-
-    let service_builder = ServiceBuilder::new().service(make_svc);
-
     // Get the HTTP socket addresses to bind on.
     let http_sockets: Vec<SocketAddr> = matches
         .get_many("bind_http")
@@ -145,10 +140,10 @@ async fn serve_requests(matches: ArgMatches, app_state: AppState) -> Result<(), 
     for addr in http_sockets {
         let mut shutdown_rx = shutdown_tx.subscribe();
 
-        let builder = match Server::try_bind(&addr) {
-            Ok(builder) => {
+        let listener = match TcpListener::bind(addr).await {
+            Ok(listener) => {
                 info!("Now listening on http://{addr}", addr = addr);
-                builder
+                listener
             }
             Err(e) => {
                 error!("Unable to bind to {addr}: {error}", addr = addr, error = e);
@@ -161,11 +156,14 @@ async fn serve_requests(matches: ArgMatches, app_state: AppState) -> Result<(), 
             }
         };
 
-        let server = builder
-            .serve(service_builder.clone())
-            .with_graceful_shutdown(async move {
-                shutdown_rx.recv().await.ok();
-            });
+        let app = app.clone();
+        let server = async move {
+            axum::serve(listener, app.into_make_service())
+                .with_graceful_shutdown(async move {
+                    shutdown_rx.recv().await.ok();
+                })
+                .await
+        };
 
         servers.push(server);
     }

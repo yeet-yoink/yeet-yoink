@@ -14,6 +14,8 @@ use tracing::{debug, error, info, warn};
 const EVENT_BUFFER_SIZE: usize = 64;
 
 pub struct BackendRegistry {
+    /// Handle to the event loop, retained for a future graceful `join` on shutdown.
+    #[allow(dead_code)]
     handle: JoinHandle<()>,
     sender: Cell<Option<Sender<BackendCommand>>>,
 }
@@ -48,6 +50,8 @@ impl BackendRegistry {
         self.sender.take().map(BackendCommandSender::from)
     }
 
+    /// Awaits the backend event loop. Reserved for graceful shutdown wiring.
+    #[allow(dead_code)]
     pub async fn join(self) -> Result<(), JoinError> {
         self.handle.await
     }
@@ -161,12 +165,12 @@ impl BackendRegistryBuilder {
             Ok(backends) => {
                 if !backends.is_empty() {
                     info!(
-                "Registering {count} {backend} backend{plural} (backend version {backend_version})",
-                count = backends.len(),
-                backend = T::backend_name(),
-                backend_version = T::backend_version(),
-                plural = if backends.len() == 1 { "" } else { "s" }
-            );
+                        "Registering {count} {backend} backend{plural} (backend version {backend_version})",
+                        count = backends.len(),
+                        backend = T::backend_name(),
+                        backend_version = T::backend_version(),
+                        plural = if backends.len() == 1 { "" } else { "s" }
+                    );
                     Ok(self.add_backends_from_iter(backends))
                 } else {
                     Ok(self)

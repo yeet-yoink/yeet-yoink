@@ -1,5 +1,5 @@
-use crate::file_writer::{err_broken_pipe, FileWriter, FinalizationError};
 use crate::CompletionMode;
+use crate::file_writer::{FileWriter, FinalizationError, err_broken_pipe};
 use file_distribution::WriteSummary;
 use metrics::transfer::{TransferMethod, TransferMetrics};
 use std::io::ErrorKind;
@@ -65,14 +65,14 @@ impl FileWriterGuard {
             // Ensure we don't store more bytes than anticipated.
             // This check only happens when we have a Content-Length header (or similar)
             // available.
-            if let Some(expected_size) = self.expected_size {
-                if self.file_size > expected_size {
-                    self.fail_if_not_already_closed();
-                    return Err(std::io::Error::new(
-                        ErrorKind::UnexpectedEof,
-                        "Attempted to write more bytes than announced",
-                    ));
-                }
+            if let Some(expected_size) = self.expected_size
+                && self.file_size > expected_size
+            {
+                self.fail_if_not_already_closed();
+                return Err(std::io::Error::new(
+                    ErrorKind::UnexpectedEof,
+                    "Attempted to write more bytes than announced",
+                ));
             }
 
             Ok(bytes_written)
@@ -89,25 +89,25 @@ impl FileWriterGuard {
             let summary = writer.finalize(mode, self.expiration).await?;
 
             // Verify the file length if possible.
-            if let Some(expected_size) = self.expected_size {
-                if self.file_size != expected_size {
-                    self.fail_if_not_already_closed();
-                    return Err(FinalizationError::InvalidFileLength(
-                        self.file_size,
-                        expected_size,
-                    ));
-                }
+            if let Some(expected_size) = self.expected_size
+                && self.file_size != expected_size
+            {
+                self.fail_if_not_already_closed();
+                return Err(FinalizationError::InvalidFileLength(
+                    self.file_size,
+                    expected_size,
+                ));
             }
 
             // Verify integrity if possible.
-            if let Some(md5) = self.expected_content_md5 {
-                if md5.ne(&summary.hashes.md5[..]) {
-                    self.fail_if_not_already_closed();
-                    return Err(FinalizationError::IntegrityCheckFailed(
-                        hex::encode(md5),
-                        hex::encode(&summary.hashes.md5[..]),
-                    ));
-                }
+            if let Some(md5) = self.expected_content_md5
+                && md5.ne(&summary.hashes.md5[..])
+            {
+                self.fail_if_not_already_closed();
+                return Err(FinalizationError::IntegrityCheckFailed(
+                    hex::encode(md5),
+                    hex::encode(&summary.hashes.md5[..]),
+                ));
             }
 
             self.try_signal_success(&summary)?;

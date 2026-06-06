@@ -1,19 +1,18 @@
 //! Contains the `/yoink` endpoint filter.
 
-use crate::expiration_as_rfc1123;
 use crate::AppState;
-use axum::body::{HttpBody, StreamBody};
+use crate::expiration_as_rfc1123;
+use axum::Router;
+use axum::body::Body;
 use axum::extract::{Path, State};
-use axum::http::{header, HeaderName};
+use axum::http::{HeaderName, StatusCode, header};
 use axum::response::{AppendHeaders, IntoResponse, Response};
 use axum::routing::get;
-use axum::Router;
 use base64::Engine;
 use file_distribution::{FileReaderTrait, GetFileReaderError};
-use hyper::StatusCode;
 use metrics::transfer::{TransferMethod, TransferMetrics};
 use mime_db::extension;
-use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
+use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use shared_files::FileSize;
 use shortguid::ShortGuid;
 use std::borrow::Borrow;
@@ -46,15 +45,10 @@ pub trait YoinkRoutes {
     fn map_yoink_endpoint(self) -> Self;
 }
 
-impl<B> YoinkRoutes for Router<AppState, B>
-where
-    B: HttpBody + Send + Sync + 'static,
-    axum::body::Bytes: From<<B as HttpBody>::Data>,
-    <B as HttpBody>::Error: std::error::Error + Send + Sync,
-{
+impl YoinkRoutes for Router<AppState> {
     // Ensure HttpCallMetricTracker is updated.
     fn map_yoink_endpoint(self) -> Self {
-        self.route("/yoink/:id", get(do_yoink))
+        self.route("/yoink/{id}", get(do_yoink))
     }
 }
 
@@ -125,7 +119,7 @@ async fn do_yoink(
     headers.push((header::EXPIRES, expiration_date));
 
     let stream = ReaderStream::new(file);
-    let body = StreamBody::new(stream);
+    let body = Body::from_stream(stream);
 
     let headers = AppendHeaders(headers);
     Ok((headers, body).into_response())
