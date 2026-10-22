@@ -195,3 +195,249 @@ pub enum NewFileError {
     #[error("An internal error occurred; the operation may be retried")]
     InternalErrorMayRetry(ShortGuid),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::CompletionMode;
+    use crate::file_writer::FinalizationError;
+    use rendezvous::Rendezvous;
+    use tokio::io::AsyncReadExt;
+    use tokio::time::timeout;
+
+    const LONG_LEASE: Duration = Duration::from_secs(3600);
+    const TEST_TIMEOUT: Duration = Duration::from_secs(5);
+
+    struct Fixture {
+        backbone: Backbone,
+        backend_receiver: mpsc::Receiver<BackendCommand>,
+    }
+
+    fn fixture(lease: Duration) -> Fixture {
+        let (sender, backend_receiver) = mpsc::channel(16);
+        let rendezvous = Rendezvous::new();
+        let backbone = Backbone::new(sender.into(), rendezvous.fork_guard(), lease);
+
+        // Dropping a Rendezvous blocks until all guards complete, which would hang
+        // the test while file leases are still pending.
+        std::mem::forget(rendezvous);
+
+        Fixture {
+            backbone,
+            backend_receiver,
+        }
+    }
+
+    async fn write_file(
+        backbone: &Backbone,
+        id: ShortGuid,
+        data: &[u8],
+    ) -> Result<Arc<WriteSummary>, FinalizationError> {
+        let mut writer = new_file(backbone, id, Some(data.len() as u64), None).await;
+        write_and_sync(&mut writer, data).await;
+        writer.finalize(CompletionMode::NoSync).await
+    }
+
+    /// Writes and syncs a chunk, mirroring the `/yeet` handler. Dropping or completing a
+    /// writer with unsynced bytes trips a debug assertion in `shared-files`.
+    async fn write_and_sync(writer: &mut FileWriterGuard, data: &[u8]) {
+        writer.write(data).await.expect("Failed to write");
+        writer.sync_data().await.expect("Failed to sync");
+    }
+
+    async fn new_file(
+        backbone: &Backbone,
+        id: ShortGuid,
+        expected_size: Option<u64>,
+        content_md5: Option<[u8; 16]>,
+    ) -> FileWriterGuard {
+        match backbone
+            .new_file(id, expected_size, None, content_md5, None)
+            .await
+        {
+            Ok(writer) => writer,
+            Err(e) => panic!("Failed to create file: {e}"),
+        }
+    }
+
+    async fn read_file(backbone: &Backbone, id: ShortGuid) -> Vec<u8> {
+        let mut reader = match backbone.get_file(id).await {
+            Ok(reader) => reader,
+            Err(e) => panic!("Failed to get file: {e}"),
+        };
+        let mut buffer = Vec::new();
+        reader
+            .read_to_end(&mut buffer)
+            .await
+            .expect("Failed to read");
+        buffer
+    }
+
+    /// Polls `condition` until it holds or the test timeout elapses.
+    async fn eventually<F, Fut>(mut condition: F)
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = bool>,
+    {
+        timeout(TEST_TIMEOUT, async {
+            while !condition().await {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("Condition not met in time");
+    }
+
+    async fn is_unknown(backbone: &Backbone, id: ShortGuid) -> bool {
+        matches!(
+            backbone.get_file(id).await,
+            Err(GetFileReaderError::UnknownFile(unknown)) if unknown == id
+        )
+    }
+
+    #[tokio::test]
+    async fn written_file_can_be_read_back() {
+        let fixture = fixture(LONG_LEASE);
+        let id = ShortGuid::new_random();
+
+        let summary = write_file(&fixture.backbone, id, b"abc")
+            .await
+            .expect("Failed to finalize");
+
+        assert_eq!(summary.file_size_bytes, 3);
+        assert_eq!(
+            format!("{:x}", summary.hashes.md5),
+            "900150983cd24fb0d6963f7d28e17f72"
+        );
+        assert_eq!(read_file(&fixture.backbone, id).await, b"abc");
+    }
+
+    #[tokio::test]
+    async fn finalized_file_is_sent_for_distribution() {
+        let mut fixture = fixture(LONG_LEASE);
+        let id = ShortGuid::new_random();
+
+        write_file(&fixture.backbone, id, b"abc")
+            .await
+            .expect("Failed to finalize");
+
+        let command = timeout(TEST_TIMEOUT, fixture.backend_receiver.recv())
+            .await
+            .expect("No backend command received in time");
+        let Some(BackendCommand::DistributeFile(distributed_id, summary)) = command else {
+            panic!("Backend channel closed unexpectedly");
+        };
+        assert_eq!(distributed_id, id);
+        assert_eq!(summary.file_size_bytes, 3);
+    }
+
+    #[tokio::test]
+    async fn unknown_file_is_reported() {
+        let fixture = fixture(LONG_LEASE);
+        assert!(is_unknown(&fixture.backbone, ShortGuid::new_random()).await);
+    }
+
+    #[tokio::test]
+    async fn duplicate_id_is_rejected() {
+        let fixture = fixture(LONG_LEASE);
+        let id = ShortGuid::new_random();
+
+        let _writer = new_file(&fixture.backbone, id, None, None).await;
+        let result = fixture.backbone.new_file(id, None, None, None, None).await;
+
+        assert!(matches!(
+            result,
+            Err(NewFileError::InternalErrorMayRetry(duplicate)) if duplicate == id
+        ));
+    }
+
+    #[tokio::test]
+    async fn short_write_fails_finalization() {
+        let fixture = fixture(LONG_LEASE);
+        let id = ShortGuid::new_random();
+
+        let mut writer = new_file(&fixture.backbone, id, Some(5), None).await;
+        write_and_sync(&mut writer, b"abc").await;
+        let result = writer.finalize(CompletionMode::NoSync).await;
+
+        assert!(matches!(
+            result,
+            Err(FinalizationError::InvalidFileLength(3, 5))
+        ));
+        eventually(|| is_unknown(&fixture.backbone, id)).await;
+    }
+
+    #[tokio::test]
+    async fn oversized_write_is_rejected() {
+        let fixture = fixture(LONG_LEASE);
+        let id = ShortGuid::new_random();
+
+        let mut writer = new_file(&fixture.backbone, id, Some(2), None).await;
+        let error = writer
+            .write(b"abc")
+            .await
+            .expect_err("Write should have failed");
+
+        assert_eq!(error.kind(), std::io::ErrorKind::UnexpectedEof);
+
+        // The rejected chunk was still written to the file; sync it so that dropping
+        // the writer does not trip the unsynced-bytes debug assertion.
+        writer.sync_data().await.expect("Failed to sync");
+    }
+
+    #[tokio::test]
+    async fn md5_mismatch_fails_finalization() {
+        let fixture = fixture(LONG_LEASE);
+        let id = ShortGuid::new_random();
+
+        let mut writer = new_file(&fixture.backbone, id, None, Some([0u8; 16])).await;
+        write_and_sync(&mut writer, b"abc").await;
+        let result = writer.finalize(CompletionMode::NoSync).await;
+
+        assert!(matches!(
+            result,
+            Err(FinalizationError::IntegrityCheckFailed(..))
+        ));
+        eventually(|| is_unknown(&fixture.backbone, id)).await;
+    }
+
+    #[tokio::test]
+    async fn matching_md5_passes_finalization() {
+        let fixture = fixture(LONG_LEASE);
+        let id = ShortGuid::new_random();
+        let md5 = hex::decode("900150983cd24fb0d6963f7d28e17f72")
+            .expect("Invalid hex")
+            .try_into()
+            .expect("Invalid MD5 length");
+
+        let mut writer = new_file(&fixture.backbone, id, None, Some(md5)).await;
+        write_and_sync(&mut writer, b"abc").await;
+        let result = writer.finalize(CompletionMode::NoSync).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn dropped_writer_removes_file() {
+        let fixture = fixture(LONG_LEASE);
+        let id = ShortGuid::new_random();
+
+        let mut writer = new_file(&fixture.backbone, id, None, None).await;
+        write_and_sync(&mut writer, b"abc").await;
+        drop(writer);
+
+        eventually(|| is_unknown(&fixture.backbone, id)).await;
+    }
+
+    #[tokio::test]
+    async fn file_is_removed_after_lease_expires() {
+        let fixture = fixture(Duration::from_millis(50));
+        let id = ShortGuid::new_random();
+
+        write_file(&fixture.backbone, id, b"abc")
+            .await
+            .expect("Failed to finalize");
+
+        eventually(|| is_unknown(&fixture.backbone, id)).await;
+    }
+}
