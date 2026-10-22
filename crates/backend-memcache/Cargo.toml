@@ -19,6 +19,12 @@ tokio = { version = "1.54.1", default-features = false, features = ["rt"] }
 tokio-util = { version = "0.7.20", features = ["io", "io-util"] }
 tracing = "0.1.44"
 
+[dev-dependencies]
+axum-extra = { version = "0.12.6", default-features = false, features = ["typed-header"] }
+backbone = { path = "../backbone" }
+rendezvous = "0.4.0"
+tokio = { version = "1.54.1", features = ["macros", "rt"] }
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
