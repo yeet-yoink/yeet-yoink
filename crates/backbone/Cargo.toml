@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 async-tempfile = { version = "0.8.0", features = ["uuid"] }
-async-trait = "0.1.89"
+async-trait = "0.1.92"
 axum-extra = { version = "0.12.6", default-features = false, features = ["typed-header"] }
 backend-traits = { version = "0.1.0", path = "../backend-traits" }
 file-distribution = { path = "../file-distribution" }
@@ -14,8 +14,8 @@ metrics = { path = "../metrics" }
 rendezvous = "0.3.0"
 shared-files = "0.4.0"
 shortguid = "0.7.0"
-thiserror = "2.0.18"
-tokio = { version = "1.52.3", features = ["io-std", "time"] }
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["io-std", "time"] }
 tracing = "0.1.44"
 
 [package.metadata.docs.rs]

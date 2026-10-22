@@ -7,13 +7,13 @@ edition = "2024"
 memcache = []
 
 [dependencies]
-clap = "4.6.1"
-config = "0.15.23"
-serde = { version = "1.0.228", features = ["derive"] }
+clap = "4.6.7"
+config = "0.15.27"
+serde = { version = "1.0.229", features = ["derive"] }
 tracing = "0.1.44"
-anyhow = "1.0.102"
+anyhow = "1.0.104"
 matches = "0.1.10"
-thiserror = "2.0.18"
+thiserror = "2.0.21"
 url = "2.5.8"
 
 [dev-dependencies]
