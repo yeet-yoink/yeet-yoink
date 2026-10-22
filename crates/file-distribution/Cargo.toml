@@ -12,7 +12,7 @@ md5 = "0.8.1"
 prost = "0.14.4"
 prost-derive = "0.14.4"
 sha2 = "0.11.1"
-shared-files = "0.4.0"
+shared-files = "0.5.0"
 shortguid = "0.7.0"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", default-features = false, features = ["time"] }

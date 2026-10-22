@@ -238,8 +238,8 @@ mod tests {
         writer.finalize(CompletionMode::NoSync).await
     }
 
-    /// Writes and syncs a chunk, mirroring the `/yeet` handler. Dropping or completing a
-    /// writer with unsynced bytes trips a debug assertion in `shared-files`.
+    /// Writes and syncs a chunk, mirroring the `/yeet` handler. Completing a writer
+    /// with unsynced bytes trips a debug assertion in `shared-files`.
     async fn write_and_sync(writer: &mut FileWriterGuard, data: &[u8]) {
         writer.write(data).await.expect("Failed to write");
         writer.sync_data().await.expect("Failed to sync");
@@ -380,9 +380,10 @@ mod tests {
 
         assert_eq!(error.kind(), std::io::ErrorKind::UnexpectedEof);
 
-        // The rejected chunk was still written to the file; sync it so that dropping
-        // the writer does not trip the unsynced-bytes debug assertion.
-        writer.sync_data().await.expect("Failed to sync");
+        // The rejected chunk was written but never synced; dropping the writer must
+        // neither panic nor keep the file around.
+        drop(writer);
+        eventually(|| is_unknown(&fixture.backbone, id)).await;
     }
 
     #[tokio::test]
@@ -418,15 +419,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dropped_writer_removes_file() {
+    async fn aborted_upload_removes_file() {
+        let fixture = fixture(LONG_LEASE);
+        let id = ShortGuid::new_random();
+
+        // Simulate an upload cancelled mid-write: bytes were written but not synced.
+        let mut writer = new_file(&fixture.backbone, id, None, None).await;
+        writer.write(b"abc").await.expect("Failed to write");
+        drop(writer);
+
+        eventually(|| is_unknown(&fixture.backbone, id)).await;
+    }
+
+    #[tokio::test]
+    async fn aborted_upload_fails_open_readers() -> Result<(), GetFileReaderError> {
         let fixture = fixture(LONG_LEASE);
         let id = ShortGuid::new_random();
 
         let mut writer = new_file(&fixture.backbone, id, None, None).await;
         write_and_sync(&mut writer, b"abc").await;
+        let mut reader = fixture.backbone.get_file(id).await?;
         drop(writer);
 
-        eventually(|| is_unknown(&fixture.backbone, id)).await;
+        // The reader must not mistake the truncated upload for a complete file.
+        let mut buffer = Vec::new();
+        let error = timeout(TEST_TIMEOUT, reader.read_to_end(&mut buffer))
+            .await
+            .expect("Reader timed out")
+            .expect_err("Reader should observe the aborted upload");
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+        Ok(())
     }
 
     #[tokio::test]
