@@ -46,7 +46,7 @@ jobs:
         run: cargo build --verbose
       - uses: taiki-e/install-action@nextest
       - name: Run tests
-        run: cargo nextest run --verbose --all-features
+        run: cargo nextest run --verbose --all-features --no-tests=pass
       # - name: Run doctests
       #   run: cargo test --doc --verbose --all-features
 
