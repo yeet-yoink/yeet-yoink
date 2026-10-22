@@ -2362,8 +2362,7 @@ dependencies = [
 [[package]]
 name = "shared-files"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fac2b0dd72fb63129b9d3cb32724e843dbcee5adcfec005796e7c2dfe9636161"
+source = "git+https://github.com/sunsided/shared-files-rs?branch=fail-abandoned-writer#8694940ef01a7003d98afa65f672f9f5ffef2062"
 dependencies = [
  "async-tempfile",
  "async-trait",
