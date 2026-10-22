@@ -46,8 +46,11 @@ impl FileWriter {
     }
 
     pub async fn write(&mut self, chunk: &[u8]) -> std::io::Result<usize> {
-        self.update_state(chunk);
-        self.inner.write(chunk).await
+        // The write may be partial; only account for the bytes that were written,
+        // since the caller retries the remainder.
+        let bytes_written = self.inner.write(chunk).await?;
+        self.update_state(&chunk[..bytes_written]);
+        Ok(bytes_written)
     }
 
     pub async fn sync_data(&self) -> Result<(), SynchronizationError> {

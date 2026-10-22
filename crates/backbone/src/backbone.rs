@@ -313,6 +313,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn partial_writes_are_hashed_once() {
+        use file_distribution::hash::{HashMd5, HashSha256};
+
+        let fixture = fixture(LONG_LEASE);
+        let id = ShortGuid::new_random();
+
+        // Larger than the 2 MiB that tokio's `File` accepts per write, which forces
+        // partial writes.
+        let data: Vec<u8> = (0..5 * 1024 * 1024).map(|i| (i % 251) as u8).collect();
+
+        // Retry the remainder of partial writes, as the `/yeet` handler does.
+        let mut writer = new_file(&fixture.backbone, id, Some(data.len() as u64), None).await;
+        let mut remaining = &data[..];
+        while !remaining.is_empty() {
+            let written = writer.write(remaining).await.expect("Failed to write");
+            remaining = &remaining[written..];
+        }
+        writer.sync_data().await.expect("Failed to sync");
+        let summary = writer
+            .finalize(CompletionMode::NoSync)
+            .await
+            .expect("Failed to finalize");
+
+        let mut md5 = HashMd5::new();
+        md5.update(&data);
+        let mut sha256 = HashSha256::new();
+        sha256.update(&data);
+
+        assert_eq!(summary.file_size_bytes, data.len());
+        assert_eq!(summary.hashes.md5, md5.finalize());
+        assert_eq!(summary.hashes.sha256, sha256.finalize());
+    }
+
+    #[tokio::test]
     async fn finalized_file_is_sent_for_distribution() {
         let mut fixture = fixture(LONG_LEASE);
         let id = ShortGuid::new_random();
