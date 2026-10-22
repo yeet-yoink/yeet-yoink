@@ -15,10 +15,11 @@ rendezvous = "0.4.0"
 shared-files = "0.5.0"
 shortguid = "0.7.0"
 thiserror = "2.0.21"
-tokio = { version = "1.54.1", features = ["io-std", "time"] }
+tokio = { version = "1.54.1", features = ["io-std", "macros", "sync", "time"] }
 tracing = "0.1.44"
 
 [dev-dependencies]
+rendezvous = { version = "0.4.0", features = ["tokio"] }
 tokio = { version = "1.54.1", features = ["macros", "rt", "io-util"] }
 
 [package.metadata.docs.rs]

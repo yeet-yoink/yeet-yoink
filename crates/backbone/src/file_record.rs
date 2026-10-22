@@ -9,8 +9,16 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver;
+use tokio::sync::watch;
 use tokio::time::Instant;
 use tracing::{info, warn};
+
+/// The read lease of a file: how long it stays available to readers, unless the
+/// backbone shuts down first.
+pub(crate) struct Lease {
+    pub duration: Duration,
+    pub shutdown: watch::Receiver<bool>,
+}
 
 #[derive(Debug)]
 pub(crate) struct FileRecord {
@@ -37,10 +45,11 @@ impl FileRecord {
         file: SharedTemporaryFile,
         backbone_command: Sender<BackboneCommand>,
         writer_command: Receiver<WriteResult>,
-        duration: Duration,
+        lease: Lease,
         content_type: Option<ContentType>,
         created: Instant,
     ) -> Self {
+        let expiration_duration = lease.duration;
         let inner = Arc::new(RwLock::new(Inner {
             file: Some(file),
             summary: None,
@@ -52,14 +61,14 @@ impl FileRecord {
             inner.clone(),
             backbone_command,
             writer_command,
-            duration,
+            lease,
         ));
         Self {
             id,
             inner,
             content_type,
             created,
-            expiration_duration: duration,
+            expiration_duration,
         }
     }
 
@@ -87,14 +96,20 @@ impl FileRecord {
     ///
     /// - Wait until the file is buffered to disk completely,
     /// - Apply a temporal lease to the file (keeping it alive for a certain time).
-    /// - Remove the file from the registry after the time is over.
+    /// - Remove the file from the registry after the time is over, or earlier
+    ///   if the backbone shuts down.
     async fn lifetime_handler(
         id: ShortGuid,
         mut inner: Arc<RwLock<Inner>>,
         backbone_command: Sender<BackboneCommand>,
         writer_command: Receiver<WriteResult>,
-        duration: Duration,
+        lease: Lease,
     ) {
+        let Lease {
+            duration,
+            mut shutdown,
+        } = lease;
+
         // Before starting the timeout, wait for the write to the file to complete.
         let summary = match writer_command.await {
             Ok(WriteResult::Success(summary)) => {
@@ -130,13 +145,17 @@ impl FileRecord {
             return;
         }
 
-        // TODO: The lifetime handler also needs to listen to graceful shutdowns.
-        //       If that's not the case, open file entries may keep the server
-        //       alive even if the servers have already shut down.
-
-        // Keep the file open for readers.
-        Self::apply_temporal_lease(&id, duration).await;
-        info!(file_id = %id, "Read lease timed out for file {id}; removing it");
+        // Keep the file open for readers. The lease ends early on shutdown, since
+        // this task holds a backbone sender that would otherwise keep the server
+        // alive until the lease expires.
+        tokio::select! {
+            _ = Self::apply_temporal_lease(&id, duration) => {
+                info!(file_id = %id, "Read lease timed out for file {id}; removing it");
+            }
+            _ = shutdown.wait_for(|&stop| stop) => {
+                info!(file_id = %id, "Shutting down; ending read lease for file {id}");
+            }
+        }
 
         // Gracefully close the file.
         Self::remove_writer(id, backbone_command).await;

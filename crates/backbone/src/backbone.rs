@@ -1,5 +1,5 @@
 use crate::file_reader::FileReader;
-use crate::file_record::FileRecord;
+use crate::file_record::{FileRecord, Lease};
 use crate::file_writer::FileWriter;
 use crate::file_writer_guard::FileWriterGuard;
 use async_tempfile::TempFile;
@@ -14,8 +14,7 @@ use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::{RwLock, mpsc, oneshot};
-use tokio::task::JoinHandle;
+use tokio::sync::{RwLock, mpsc, oneshot, watch};
 use tokio::time::Instant;
 use tracing::info;
 
@@ -25,9 +24,10 @@ use tracing::info;
 pub struct Backbone {
     inner: Arc<RwLock<Inner>>,
     sender: Sender<BackboneCommand>,
-    loop_handle: JoinHandle<()>,
     /// The duration for which to keep each buffered file available to readers.
     temporal_lease: Duration,
+    /// Signals pending file leases to end early when the backbone shuts down.
+    shutdown: watch::Sender<bool>,
 }
 
 struct Inner {
@@ -45,7 +45,8 @@ impl Backbone {
             open: HashMap::default(),
         }));
 
-        let loop_handle = tokio::spawn(Self::command_loop(
+        // Detached; the cleanup rendezvous tracks when the loop finishes.
+        tokio::spawn(Self::command_loop(
             inner.clone(),
             receiver,
             backend_sender,
@@ -54,13 +55,9 @@ impl Backbone {
         Self {
             inner,
             sender,
-            loop_handle,
             temporal_lease,
+            shutdown: watch::Sender::new(false),
         }
-    }
-
-    pub async fn join(self) {
-        self.loop_handle.await.ok();
     }
 
     /// Creates a new file buffer, registers it and returns a writer to it.
@@ -96,7 +93,10 @@ impl Backbone {
                 file,
                 self.sender.clone(),
                 receiver,
-                temporal_lease,
+                Lease {
+                    duration: temporal_lease,
+                    shutdown: self.shutdown.subscribe(),
+                },
                 content_type,
                 Instant::now(),
             )),
@@ -171,6 +171,14 @@ impl Backbone {
 
         info!("The backbone command loop stopped");
         cleanup_rendezvous.completed();
+    }
+}
+
+/// Ends all pending file leases so that the command loop, and with it the
+/// cleanup rendezvous, can complete during a graceful shutdown.
+impl Drop for Backbone {
+    fn drop(&mut self) {
+        self.shutdown.send_replace(true);
     }
 }
 
@@ -483,6 +491,24 @@ mod tests {
             .expect_err("Reader should observe the aborted upload");
         assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn dropping_backbone_ends_pending_leases() {
+        let (sender, _backend_receiver) = mpsc::channel(16);
+        let rendezvous = Rendezvous::new();
+        let backbone = Backbone::new(sender.into(), rendezvous.fork_guard(), LONG_LEASE);
+
+        write_file(&backbone, ShortGuid::new_random(), b"abc")
+            .await
+            .expect("Failed to finalize");
+        drop(backbone);
+
+        // Without ending the lease, the command loop stays alive for its full duration.
+        // Use the bounded wait: unlike a dropped `rendezvous_async`, it does not block
+        // when the rendezvous is dropped after a timeout.
+        let result = rendezvous.rendezvous_timeout_async(TEST_TIMEOUT).await;
+        assert!(result.is_ok(), "A pending lease kept the backbone alive");
     }
 
     #[tokio::test]
