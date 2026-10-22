@@ -38,7 +38,7 @@ tasks:
       - sh: command -v protoc
         msg: "protoc not found — install the Protocol Buffers compiler"
     cmds:
-      - cargo nextest run --workspace --all-features --no-tests=pass {{.CLI_ARGS}}
+      - cargo nextest run --workspace --all-features {{.CLI_ARGS}}
 
   test:docs:
     desc: Run documentation tests (not covered by nextest)

@@ -43,10 +43,10 @@ jobs:
       - name: Check format
         run: cargo fmt --check
       - name: Build
-        run: cargo build --verbose
+        run: cargo build --workspace --verbose
       - uses: taiki-e/install-action@nextest
       - name: Run tests
-        run: cargo nextest run --verbose --all-features --no-tests=pass
+        run: cargo nextest run --workspace --verbose --all-features
       # - name: Run doctests
       #   run: cargo test --doc --verbose --all-features
 
