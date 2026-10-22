@@ -21,6 +21,7 @@ pub struct FileWriter {
     md5: HashMd5,
     sha256: HashSha256,
     file_name: Option<String>,
+    content_type: Option<String>,
     file_size: usize,
 }
 
@@ -29,6 +30,7 @@ impl FileWriter {
         id: &ShortGuid,
         inner: SharedTemporaryFileWriter,
         file_name: Option<String>,
+        content_type: Option<String>,
     ) -> Self {
         debug!(
             file_id = %id,
@@ -41,6 +43,7 @@ impl FileWriter {
             md5: HashMd5::new(),
             sha256: HashSha256::new(),
             file_name,
+            content_type,
             file_size: 0,
         }
     }
@@ -74,6 +77,7 @@ impl FileWriter {
             expires: Instant::now() + expiration,
             hashes: FileHashes::new(md5, sha256),
             file_name: self.file_name,
+            content_type: self.content_type,
             file_size_bytes: self.file_size,
         });
 

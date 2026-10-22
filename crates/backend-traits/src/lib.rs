@@ -5,11 +5,13 @@
 mod backend_command;
 mod backend_info;
 mod distribute_file;
+mod fetch_file;
 mod from_config;
 mod registration;
 
 pub use backend_command::{BackendCommand, BackendCommandSendError, BackendCommandSender};
 pub use backend_info::BackendInfo;
-pub use distribute_file::{Backend, DistributeFile, DistributionError};
+pub use distribute_file::{Backend, DistributeFile, DistributionError, StorageBackend};
+pub use fetch_file::{FetchError, FetchFile, FetchedFile};
 pub use from_config::TryCreateFromConfig;
 pub use registration::{BackendRegistration, RegisterBackendError};

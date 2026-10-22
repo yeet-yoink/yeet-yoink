@@ -54,7 +54,10 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter", "parking_lo
 uuid = { version = "1.28.0", features = ["v1", "rng", "serde"] }
 
 [dev-dependencies]
+async-trait = "0.1.92"
+rendezvous = { version = "0.4.0", features = ["tokio"] }
 serde_yaml = "0.9.34"
+tower = { version = "0.5.3", features = ["util"] }
 
 [package.metadata.docs.rs]
 all-features = true

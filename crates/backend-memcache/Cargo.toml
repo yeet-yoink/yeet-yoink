@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 app-config = { version = "0.1.0", path = "../app-config", features = ["memcache"] }
 async-trait = "0.1.92"
+bytes = "1.12.1"
 backend-traits = { version = "0.1.0", path = "../backend-traits" }
 file-distribution = { version = "0.1.0", path = "../file-distribution" }
 map-ok = "1.0.0"

@@ -8,8 +8,9 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderName, StatusCode, header};
 use axum::response::{AppendHeaders, IntoResponse, Response};
 use axum::routing::get;
+use backend_traits::FetchedFile;
 use base64::Engine;
-use file_distribution::{FileReaderTrait, GetFileReaderError};
+use file_distribution::{BoxedFileReader, FileHashes, FileReaderTrait, GetFileReaderError};
 use metrics::transfer::{TransferMethod, TransferMetrics};
 use mime_db::extension;
 use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
@@ -17,6 +18,7 @@ use shared_files::FileSize;
 use shortguid::ShortGuid;
 use std::borrow::Borrow;
 use tokio_util::io::ReaderStream;
+use tracing::warn;
 
 /// Escape control set for URL/hex-encoding file names in the Content-Disposition header.
 static ASCII_CONTROLS: AsciiSet = CONTROLS
@@ -57,11 +59,34 @@ async fn do_yoink(
     Path(id): Path<ShortGuid>,
     State(state): State<AppState>,
 ) -> Result<Response, StatusCode> {
-    let file = match state.backbone.get_file(id).await {
-        Ok(file) => file,
+    let not_found = match state.backbone.get_file(id).await {
+        Ok(file) => return Ok(local_file_response(id, file)),
+        Err(e @ (GetFileReaderError::UnknownFile(_) | GetFileReaderError::FileExpired(_))) => e,
         Err(e) => return Ok(map_file_reader_error_to_response(e)),
     };
 
+    // The file is not buffered locally (anymore); try the backends.
+    let Some(fetched) = state.backends.fetch(id).await else {
+        return Ok(map_file_reader_error_to_response(not_found));
+    };
+
+    if state.near_cache {
+        match state.backbone.cache_file(id, &fetched).await {
+            Ok(()) => match state.backbone.get_file(id).await {
+                Ok(file) => return Ok(local_file_response(id, file)),
+                Err(e) => warn!(file_id = %id, "Failed to read file {id} from the near cache: {e}"),
+            },
+            Err(e) => {
+                warn!(file_id = %id, "Failed to cache file {id} fetched from a backend: {e}")
+            }
+        }
+    }
+
+    Ok(fetched_file_response(id, fetched))
+}
+
+/// Streams a file buffered by the backbone.
+fn local_file_response(id: ShortGuid, file: BoxedFileReader) -> Response {
     TransferMetrics::track_transfer(TransferMethod::Fetch);
 
     let summary = file.summary();
@@ -78,25 +103,7 @@ async fn do_yoink(
 
     // Add ETag from SHA-256 hash, etc.
     if let Some(summary) = summary {
-        headers.push((
-            header::ETAG,
-            base64::engine::general_purpose::STANDARD.encode(&summary.hashes.sha256[..]),
-        ));
-
-        headers.push((
-            HeaderName::from_static("content-md5"),
-            base64::engine::general_purpose::STANDARD.encode(&summary.hashes.md5[..]),
-        ));
-
-        headers.push((
-            HeaderName::from_static("yy-file-md5"),
-            hex::encode(&summary.hashes.md5[..]),
-        ));
-
-        headers.push((
-            HeaderName::from_static("yy-file-sha256"),
-            hex::encode(&summary.hashes.sha256[..]),
-        ));
+        headers.extend(hash_headers(&summary.hashes));
 
         let file_name = &summary.file_name;
 
@@ -122,7 +129,50 @@ async fn do_yoink(
     let body = Body::from_stream(stream);
 
     let headers = AppendHeaders(headers);
-    Ok((headers, body).into_response())
+    (headers, body).into_response()
+}
+
+/// Serves a file fetched from a backend without buffering it locally.
+///
+/// The backend's retention is unknown, so no `Age` or `Expires` header is sent.
+fn fetched_file_response(id: ShortGuid, file: FetchedFile) -> Response {
+    TransferMetrics::track_transfer(TransferMethod::Fetch);
+    TransferMetrics::track_bytes_transferred(TransferMethod::Fetch, file.data.len());
+
+    let content_type = file.content_type.unwrap_or_default();
+
+    let mut headers = vec![(header::CONTENT_LENGTH, file.data.len().to_string())];
+    headers.extend(hash_headers(&file.hashes));
+    headers.push(content_disposition_from_optional_name(
+        id,
+        &content_type,
+        &file.file_name,
+    ));
+    if !content_type.is_empty() {
+        headers.push((header::CONTENT_TYPE, content_type));
+    }
+
+    (AppendHeaders(headers), Body::from(file.data)).into_response()
+}
+
+/// Generates the `ETag`, `Content-MD5` and hex-encoded hash headers.
+fn hash_headers(hashes: &FileHashes) -> [(HeaderName, String); 4] {
+    let base64 = &base64::engine::general_purpose::STANDARD;
+    [
+        (header::ETAG, base64.encode(&hashes.sha256[..])),
+        (
+            HeaderName::from_static("content-md5"),
+            base64.encode(&hashes.md5[..]),
+        ),
+        (
+            HeaderName::from_static("yy-file-md5"),
+            hex::encode(&hashes.md5[..]),
+        ),
+        (
+            HeaderName::from_static("yy-file-sha256"),
+            hex::encode(&hashes.sha256[..]),
+        ),
+    ]
 }
 
 /// Attempts to generate a `Content-Disposition` header from the optionally specified
@@ -255,5 +305,241 @@ mod tests {
             &Some("my \"file\".txt".to_string()),
         );
         assert_eq!(value, "attachment; filename=\"my%20%22file%22.txt\"");
+    }
+}
+
+#[cfg(test)]
+mod endpoint_tests {
+    use super::*;
+    use crate::backend_registry::BackendFetcher;
+    use async_trait::async_trait;
+    use axum::http::Request;
+    use backbone::{Backbone, CompletionMode};
+    use backend_traits::{
+        Backend, DistributeFile, DistributionError, FetchError, FetchFile, FetchedFile,
+    };
+    use bytes::Bytes;
+    use file_distribution::hash::{HashMd5, HashSha256};
+    use file_distribution::{FileProvider, WriteSummary};
+    use rendezvous::Rendezvous;
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+    use tokio::sync::{broadcast, mpsc};
+    use tower::ServiceExt;
+
+    /// A backend that serves files from memory and counts fetches.
+    #[derive(Clone, Default)]
+    struct FakeBackend {
+        files: Arc<Mutex<HashMap<ShortGuid, FetchedFile>>>,
+        fetches: Arc<AtomicUsize>,
+    }
+
+    impl FakeBackend {
+        fn insert(&self, id: ShortGuid, file: FetchedFile) {
+            self.files.lock().unwrap().insert(id, file);
+        }
+
+        fn clear(&self) {
+            self.files.lock().unwrap().clear();
+        }
+
+        fn fetches(&self) -> usize {
+            self.fetches.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl DistributeFile for FakeBackend {
+        fn tag(&self) -> &str {
+            "fake"
+        }
+
+        async fn distribute_file(
+            &self,
+            _id: ShortGuid,
+            _summary: Arc<WriteSummary>,
+            _file_provider: FileProvider,
+        ) -> Result<(), DistributionError> {
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl FetchFile for FakeBackend {
+        async fn fetch_file(&self, id: ShortGuid) -> Result<Option<FetchedFile>, FetchError> {
+            self.fetches.fetch_add(1, Ordering::SeqCst);
+            Ok(self.files.lock().unwrap().get(&id).cloned())
+        }
+    }
+
+    struct Fixture {
+        state: AppState,
+        backend: FakeBackend,
+        _backend_receiver: mpsc::Receiver<backend_traits::BackendCommand>,
+    }
+
+    fn fixture(near_cache: bool) -> Fixture {
+        let (sender, backend_receiver) = mpsc::channel(16);
+        let rendezvous = Rendezvous::new();
+        let backbone = Backbone::new(
+            sender.into(),
+            rendezvous.fork_guard(),
+            Duration::from_secs(3600),
+        );
+
+        // Dropping a Rendezvous blocks until all guards complete.
+        std::mem::forget(rendezvous);
+
+        let backend = FakeBackend::default();
+        let state = AppState {
+            shutdown_tx: broadcast::channel(1).0,
+            backbone: Arc::new(backbone),
+            backends: BackendFetcher::new(Arc::new(vec![Backend::wrap(backend.clone())])),
+            near_cache,
+        };
+        Fixture {
+            state,
+            backend,
+            _backend_receiver: backend_receiver,
+        }
+    }
+
+    fn fetched_file(data: &'static [u8]) -> FetchedFile {
+        let mut md5 = HashMd5::new();
+        md5.update(data);
+        let mut sha256 = HashSha256::new();
+        sha256.update(data);
+        FetchedFile {
+            file_name: Some("fetched.txt".into()),
+            content_type: Some("text/plain".into()),
+            hashes: FileHashes::new(md5.finalize(), sha256.finalize()),
+            data: Bytes::from_static(data),
+        }
+    }
+
+    async fn yoink(state: &AppState, id: ShortGuid) -> (StatusCode, HeaderMapSnapshot, Bytes) {
+        let request = Request::get(format!("/yoink/{id}"))
+            .body(Body::empty())
+            .expect("Invalid request");
+        let response = crate::router(state.clone())
+            .oneshot(request)
+            .await
+            .expect("Request failed");
+        let status = response.status();
+        let headers = HeaderMapSnapshot(response.headers().clone());
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("Failed to read body");
+        (status, headers, body)
+    }
+
+    struct HeaderMapSnapshot(axum::http::HeaderMap);
+
+    impl HeaderMapSnapshot {
+        fn get(&self, name: &str) -> Option<&str> {
+            self.0.get(name).and_then(|v| v.to_str().ok())
+        }
+    }
+
+    #[tokio::test]
+    async fn local_file_is_served_without_backends() {
+        let fixture = fixture(true);
+        let id = ShortGuid::new_random();
+
+        let mut writer = fixture
+            .state
+            .backbone
+            .new_file(id, Some(3), None, None, None)
+            .await
+            .expect("Failed to create file");
+        writer.write(b"abc").await.expect("Failed to write");
+        writer.sync_data().await.expect("Failed to sync");
+        writer
+            .finalize(CompletionMode::NoSync)
+            .await
+            .expect("Failed to finalize");
+
+        let (status, _, body) = yoink(&fixture.state, id).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, "abc");
+        assert_eq!(fixture.backend.fetches(), 0);
+    }
+
+    #[tokio::test]
+    async fn missing_file_is_not_found() {
+        let fixture = fixture(true);
+
+        let (status, _, _) = yoink(&fixture.state, ShortGuid::new_random()).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(fixture.backend.fetches(), 1);
+    }
+
+    #[tokio::test]
+    async fn file_is_served_from_backend() {
+        let fixture = fixture(false);
+        let id = ShortGuid::new_random();
+        fixture.backend.insert(id, fetched_file(b"abc"));
+
+        let (status, headers, body) = yoink(&fixture.state, id).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, "abc");
+        assert_eq!(headers.get("content-type"), Some("text/plain"));
+        assert_eq!(headers.get("content-length"), Some("3"));
+        assert_eq!(
+            headers.get("yy-file-md5"),
+            Some("900150983cd24fb0d6963f7d28e17f72")
+        );
+        assert_eq!(
+            headers.get("content-disposition"),
+            Some("attachment; filename=\"fetched.txt\"")
+        );
+        assert_eq!(headers.get("expires"), None);
+
+        // Without the near cache, every read goes to the backend.
+        let (status, _, _) = yoink(&fixture.state, id).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(fixture.backend.fetches(), 2);
+    }
+
+    #[tokio::test]
+    async fn fetched_file_is_near_cached() {
+        let fixture = fixture(true);
+        let id = ShortGuid::new_random();
+        fixture.backend.insert(id, fetched_file(b"abc"));
+
+        let (status, headers, body) = yoink(&fixture.state, id).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, "abc");
+        assert_eq!(headers.get("content-type"), Some("text/plain"));
+        assert!(headers.get("expires").is_some());
+
+        // The second read is served locally, even once the backend lost the file.
+        fixture.backend.clear();
+        let (status, headers, body) = yoink(&fixture.state, id).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, "abc");
+        assert_eq!(
+            headers.get("content-disposition"),
+            Some("attachment; filename=\"fetched.txt\"")
+        );
+        assert_eq!(fixture.backend.fetches(), 1);
+    }
+
+    #[tokio::test]
+    async fn corrupt_backend_copy_is_not_served() {
+        let fixture = fixture(true);
+        let id = ShortGuid::new_random();
+        fixture.backend.insert(
+            id,
+            FetchedFile {
+                data: Bytes::from_static(b"abd"),
+                ..fetched_file(b"abc")
+            },
+        );
+
+        let (status, _, _) = yoink(&fixture.state, id).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
     }
 }

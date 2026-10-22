@@ -6,6 +6,7 @@ message ItemMetadata {
   bytes id = 1;
   optional string file_name = 2;
   Hashes hashes = 3;
+  optional string content_type = 4;
   // TODO: Add creation timestamp
 }
 

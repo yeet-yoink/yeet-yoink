@@ -10,6 +10,8 @@ pub struct WriteSummary {
     pub hashes: FileHashes,
     /// The optional file name.
     pub file_name: Option<String>,
+    /// The optional content type.
+    pub content_type: Option<String>,
     /// The file size in bytes.
     pub file_size_bytes: usize,
 }

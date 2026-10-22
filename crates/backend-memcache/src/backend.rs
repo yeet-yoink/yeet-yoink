@@ -4,8 +4,11 @@ use app_config::{
     memcache::{DEFAULT_EXPIRATION, MemcacheBackendConfig},
 };
 use async_trait::async_trait;
-use backend_traits::{Backend, DistributeFile, DistributionError};
+use backend_traits::{
+    Backend, DistributeFile, DistributionError, FetchError, FetchFile, FetchedFile,
+};
 use backend_traits::{BackendInfo, TryCreateFromConfig};
+use bytes::Bytes;
 use file_distribution::protobuf::ItemMetadata;
 use file_distribution::{BoxedFileReader, FileProvider, GetFile, WriteSummary};
 use map_ok::{BoxOk, MapOk};
@@ -96,6 +99,51 @@ impl DistributeFile for MemcacheBackend {
             Ok(()) => Ok(()),
             Err(e) => Err(DistributionError::BackendSpecific(Box::new(e))),
         }
+    }
+}
+
+#[async_trait]
+impl FetchFile for MemcacheBackend {
+    async fn fetch_file(&self, id: ShortGuid) -> Result<Option<FetchedFile>, FetchError> {
+        let pool = self.pool.clone();
+        let entries = spawn_blocking(move || {
+            let client = pool
+                .get()
+                .map_err(|e| FetchError::BackendSpecific(Box::new(e)))?;
+            let get = |key: String| {
+                client
+                    .get::<Vec<u8>>(&key)
+                    .map_err(|e| FetchError::BackendSpecific(Box::new(e)))
+            };
+
+            let Some(metadata) = get(format!("meta-{id}"))? else {
+                return Ok(None);
+            };
+            let Some(data) = get(format!("data-{id}"))? else {
+                return Ok(None);
+            };
+            Ok::<_, FetchError>(Some((metadata, data)))
+        })
+        .await??;
+
+        let Some((metadata, data)) = entries else {
+            trace!(file_id = %id, "File {id} not found in memcache");
+            return Ok(None);
+        };
+
+        let metadata = ItemMetadata::deserialize_from_proto(&metadata)
+            .map_err(|e| FetchError::InvalidMetadata(e.to_string()))?;
+        let hashes = metadata
+            .file_hashes()
+            .ok_or_else(|| FetchError::InvalidMetadata("missing or malformed hashes".into()))?;
+
+        trace!(file_id = %id, "Fetched file {id} from memcache");
+        Ok(Some(FetchedFile {
+            file_name: metadata.file_name,
+            content_type: metadata.content_type,
+            hashes,
+            data: Bytes::from(data),
+        }))
     }
 }
 

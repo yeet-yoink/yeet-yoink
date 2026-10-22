@@ -233,6 +233,7 @@ dependencies = [
  "async-trait",
  "axum-extra",
  "backend-traits",
+ "bytes",
  "file-distribution",
  "hex",
  "metrics",
@@ -251,6 +252,7 @@ dependencies = [
  "app-config",
  "async-trait",
  "backend-traits",
+ "bytes",
  "file-distribution",
  "map-ok",
  "r2d2",
@@ -269,6 +271,7 @@ version = "0.1.0"
 dependencies = [
  "app-config",
  "async-trait",
+ "bytes",
  "file-distribution",
  "shortguid",
  "thiserror",
@@ -3217,6 +3220,7 @@ version = "0.1.1-unstable.2"
 dependencies = [
  "anyhow",
  "app-config",
+ "async-trait",
  "axum",
  "axum-extra",
  "backbone",
