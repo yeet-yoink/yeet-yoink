@@ -141,7 +141,9 @@ impl FetchFile for MemcacheBackend {
             .ok_or_else(|| FetchError::InvalidMetadata("missing or malformed hashes".into()))?;
 
         trace!(file_id = %id, "Fetched file {id} from memcache");
-        let expires_at = metadata.expires_at();
+        let expires_at = metadata
+            .expires_at()
+            .map_err(|e| FetchError::InvalidMetadata(e.to_string()))?;
         Ok(Some(FetchedFile {
             expires_at,
             file_name: metadata.file_name,

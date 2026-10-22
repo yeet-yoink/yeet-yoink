@@ -122,8 +122,9 @@ fn local_file_response(id: ShortGuid, file: BoxedFileReader) -> Response {
     headers.push((header::AGE, file.file_age().as_secs().to_string()));
 
     // Provide expiration header.
-    let expiration_date = expiration_as_rfc1123(&file.expiration_date());
-    headers.push((header::EXPIRES, expiration_date));
+    if let Some(expiration_date) = expiration_as_rfc1123(&file.expiration_date()) {
+        headers.push((header::EXPIRES, expiration_date));
+    }
 
     let stream = ReaderStream::new(file);
     let body = Body::from_stream(stream);
@@ -151,8 +152,8 @@ fn fetched_file_response(id: ShortGuid, file: FetchedFile) -> Response {
     if !content_type.is_empty() {
         headers.push((header::CONTENT_TYPE, content_type));
     }
-    if let Some(expires_at) = file.expires_at {
-        headers.push((header::EXPIRES, system_time_as_rfc1123(expires_at)));
+    if let Some(expires_at) = file.expires_at.and_then(system_time_as_rfc1123) {
+        headers.push((header::EXPIRES, expires_at));
     }
 
     (AppendHeaders(headers), Body::from(file.data)).into_response()
@@ -466,7 +467,7 @@ mod endpoint_tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(
             headers.get("expires"),
-            Some(system_time_as_rfc1123(expires_at).as_str())
+            system_time_as_rfc1123(expires_at).as_deref()
         );
     }
 

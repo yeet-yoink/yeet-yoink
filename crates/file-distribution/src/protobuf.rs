@@ -7,6 +7,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 include!(concat!(env!("OUT_DIR"), "/types.rs"));
 
+/// 9999-12-31T23:59:59.999Z, the latest expiry accepted from a backend.
+const MAX_EXPIRES_AT_UNIX_MS: u64 = 253_402_300_799_999;
+
+#[derive(Debug, thiserror::Error)]
+#[error("Expiry timestamp {0} ms is out of range")]
+pub struct InvalidExpiry(pub u64);
+
 impl ItemMetadata {
     /// Creates the metadata for a file stored by a backend.
     ///
@@ -29,9 +36,15 @@ impl ItemMetadata {
     }
 
     /// Gets when the backend's copy expires, or `None` if it is kept indefinitely.
-    pub fn expires_at(&self) -> Option<SystemTime> {
-        self.expires_at_unix_ms
-            .map(|ms| UNIX_EPOCH + Duration::from_millis(ms))
+    ///
+    /// Metadata comes from the backend and is not trusted: timestamps beyond the
+    /// year 9999 are rejected.
+    pub fn expires_at(&self) -> Result<Option<SystemTime>, InvalidExpiry> {
+        match self.expires_at_unix_ms {
+            None => Ok(None),
+            Some(ms) if ms > MAX_EXPIRES_AT_UNIX_MS => Err(InvalidExpiry(ms)),
+            Some(ms) => Ok(Some(UNIX_EPOCH + Duration::from_millis(ms))),
+        }
     }
 
     pub fn deserialize_from_proto(buf: &[u8]) -> Result<Self, prost::DecodeError> {
@@ -86,7 +99,7 @@ mod tests {
         assert_eq!(metadata.id, id.as_bytes());
         assert_eq!(metadata.file_name.as_deref(), Some("abc.txt"));
         assert_eq!(metadata.content_type.as_deref(), Some("text/plain"));
-        assert_eq!(metadata.expires_at(), Some(expires_at));
+        assert_eq!(metadata.expires_at().ok(), Some(Some(expires_at)));
 
         let hashes = metadata.file_hashes().expect("Missing hashes");
         assert_eq!(hashes.md5, summary.hashes.md5);
@@ -100,7 +113,18 @@ mod tests {
             .expect("Failed to serialize");
 
         let metadata = ItemMetadata::deserialize_from_proto(&buf).expect("Failed to deserialize");
-        assert_eq!(metadata.expires_at(), None);
+        assert_eq!(metadata.expires_at().ok(), Some(None));
+    }
+
+    #[test]
+    fn out_of_range_expiry_is_rejected() {
+        let mut metadata = ItemMetadata::new(ShortGuid::from_bytes([7u8; 16]), &summary(), None);
+
+        metadata.expires_at_unix_ms = Some(MAX_EXPIRES_AT_UNIX_MS);
+        assert!(metadata.expires_at().is_ok());
+
+        metadata.expires_at_unix_ms = Some(u64::MAX);
+        assert!(metadata.expires_at().is_err());
     }
 
     #[test]

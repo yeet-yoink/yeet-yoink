@@ -173,15 +173,15 @@ async fn do_yeet(
     })
     .into_response();
 
-    let expiration_date = expiration_as_rfc1123(&write_result.expires);
-
     *response.status_mut() = StatusCode::CREATED;
     let headers = response.headers_mut();
 
     // Set the file expiration.
-    headers
-        .entry(EXPIRES)
-        .or_insert(HeaderValue::from_str(&expiration_date).expect("invalid time input provided"));
+    if let Some(expiration_date) = expiration_as_rfc1123(&write_result.expires) {
+        headers.entry(EXPIRES).or_insert(
+            HeaderValue::from_str(&expiration_date).expect("invalid time input provided"),
+        );
+    }
 
     // Add the ID as a separate header to simplify testing.
     let id = format!("{id}");
