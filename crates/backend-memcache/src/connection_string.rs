@@ -8,12 +8,6 @@ impl From<&MemcacheConnectionString> for MemcacheConnectionStringWrapper {
     }
 }
 
-impl memcache::Connectable for MemcacheConnectionStringWrapper {
-    fn get_urls(self) -> Vec<String> {
-        self.0.get_urls()
-    }
-}
-
 impl r2d2_memcache::memcache::Connectable for MemcacheConnectionStringWrapper {
     fn get_urls(self) -> Vec<String> {
         self.0.get_urls()

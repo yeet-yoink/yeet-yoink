@@ -105,7 +105,7 @@ async fn main() -> ExitCode {
 
     // TODO: Ensure registry is dropped, backbone is halted, ...
     shut_down_backbone(backbone);
-    rendezvous.rendezvous_async().await.ok();
+    rendezvous.rendezvous_async().await;
 
     info!("Bye. 👋");
     exit_code.unwrap_or(ExitCode::SUCCESS)
