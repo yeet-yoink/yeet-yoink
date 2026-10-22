@@ -3,11 +3,16 @@ use bytes::{Bytes, BytesMut};
 use prost::Message;
 use shortguid::ShortGuid;
 use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 include!(concat!(env!("OUT_DIR"), "/types.rs"));
 
 impl ItemMetadata {
-    pub fn new(id: ShortGuid, summary: &Arc<WriteSummary>) -> Self {
+    /// Creates the metadata for a file stored by a backend.
+    ///
+    /// `expires_at` is when the backend's copy expires, or `None` if it is kept
+    /// indefinitely.
+    pub fn new(id: ShortGuid, summary: &Arc<WriteSummary>, expires_at: Option<SystemTime>) -> Self {
         Self {
             id: Vec::from(id.as_bytes()),
             file_name: summary.file_name.clone(),
@@ -16,7 +21,17 @@ impl ItemMetadata {
                 sha256: Vec::from(summary.hashes.sha256.as_slice()),
             }),
             content_type: summary.content_type.clone(),
+            expires_at_unix_ms: expires_at.map(|t| {
+                let since_epoch = t.duration_since(UNIX_EPOCH).unwrap_or_default();
+                since_epoch.as_millis().min(u64::MAX as u128) as u64
+            }),
         }
+    }
+
+    /// Gets when the backend's copy expires, or `None` if it is kept indefinitely.
+    pub fn expires_at(&self) -> Option<SystemTime> {
+        self.expires_at_unix_ms
+            .map(|ms| UNIX_EPOCH + Duration::from_millis(ms))
     }
 
     pub fn deserialize_from_proto(buf: &[u8]) -> Result<Self, prost::DecodeError> {
@@ -62,7 +77,8 @@ mod tests {
     fn metadata_round_trips() {
         let summary = summary();
         let id = ShortGuid::from_bytes([7u8; 16]);
-        let buf = ItemMetadata::new(id, &summary)
+        let expires_at = UNIX_EPOCH + Duration::from_millis(1_800_000_000_000);
+        let buf = ItemMetadata::new(id, &summary, Some(expires_at))
             .serialize_to_proto()
             .expect("Failed to serialize");
 
@@ -70,10 +86,21 @@ mod tests {
         assert_eq!(metadata.id, id.as_bytes());
         assert_eq!(metadata.file_name.as_deref(), Some("abc.txt"));
         assert_eq!(metadata.content_type.as_deref(), Some("text/plain"));
+        assert_eq!(metadata.expires_at(), Some(expires_at));
 
         let hashes = metadata.file_hashes().expect("Missing hashes");
         assert_eq!(hashes.md5, summary.hashes.md5);
         assert_eq!(hashes.sha256, summary.hashes.sha256);
+    }
+
+    #[test]
+    fn metadata_without_expiry_is_kept_indefinitely() {
+        let buf = ItemMetadata::new(ShortGuid::from_bytes([7u8; 16]), &summary(), None)
+            .serialize_to_proto()
+            .expect("Failed to serialize");
+
+        let metadata = ItemMetadata::deserialize_from_proto(&buf).expect("Failed to deserialize");
+        assert_eq!(metadata.expires_at(), None);
     }
 
     #[test]
@@ -86,6 +113,7 @@ mod tests {
                 sha256: vec![0; 32],
             }),
             content_type: None,
+            expires_at_unix_ms: None,
         };
         assert!(metadata.file_hashes().is_none());
 

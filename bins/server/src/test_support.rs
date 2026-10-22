@@ -77,5 +77,6 @@ pub fn fetched_file(data: &'static [u8]) -> FetchedFile {
         content_type: Some("text/plain".into()),
         hashes: FileHashes::new(md5.finalize(), sha256.finalize()),
         data: Bytes::from_static(data),
+        expires_at: None,
     }
 }

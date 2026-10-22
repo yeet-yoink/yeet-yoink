@@ -121,14 +121,17 @@ impl BackendFetcher {
         Self { backends }
     }
 
-    /// Fetches a file from the first backend that holds an intact copy.
+    /// Fetches a file from the first backend that holds an intact, unexpired copy.
     ///
-    /// Backends are queried in registration order. Errors and corrupt copies are
-    /// logged and skipped.
+    /// Backends are queried in registration order. Errors, expired and corrupt
+    /// copies are logged and skipped.
     // TODO(#58): query backends in configured priority order.
     pub async fn fetch(&self, id: ShortGuid) -> Option<FetchedFile> {
         for backend in self.backends.iter() {
             match backend.fetch_file(id).await {
+                Ok(Some(file)) if file.is_expired() => {
+                    debug!(file_id = %id, "Backend {tag} returned an expired copy of file {id}", tag = backend.tag());
+                }
                 Ok(Some(file)) if file.is_intact() => {
                     debug!(file_id = %id, "Fetched file {id} from backend {tag}", tag = backend.tag());
                     return Some(file);
@@ -289,6 +292,23 @@ mod tests {
         let file = fetcher(&[corrupt, healthy]).fetch(id).await;
 
         assert_eq!(file.map(|f| f.data), Some(Bytes::from_static(b"abc")));
+    }
+
+    #[tokio::test]
+    async fn fetch_skips_expired_copies() {
+        use std::time::{Duration, SystemTime};
+
+        let expired = FakeBackend::default();
+        let id = ShortGuid::new_random();
+        expired.insert(
+            id,
+            FetchedFile {
+                expires_at: Some(SystemTime::now() - Duration::from_secs(1)),
+                ..fetched_file(b"abc")
+            },
+        );
+
+        assert!(fetcher(&[expired]).fetch(id).await.is_none());
     }
 
     #[tokio::test]

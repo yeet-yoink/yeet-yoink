@@ -1,7 +1,7 @@
 //! Contains the `/yoink` endpoint filter.
 
 use crate::AppState;
-use crate::expiration_as_rfc1123;
+use crate::{expiration_as_rfc1123, system_time_as_rfc1123};
 use axum::Router;
 use axum::body::Body;
 use axum::extract::{Path, State};
@@ -134,7 +134,7 @@ fn local_file_response(id: ShortGuid, file: BoxedFileReader) -> Response {
 
 /// Serves a file fetched from a backend without buffering it locally.
 ///
-/// The backend's retention is unknown, so no `Age` or `Expires` header is sent.
+/// `Expires` reflects the backend copy's expiry, if it has one. No `Age` is sent.
 fn fetched_file_response(id: ShortGuid, file: FetchedFile) -> Response {
     TransferMetrics::track_transfer(TransferMethod::Fetch);
     TransferMetrics::track_bytes_transferred(TransferMethod::Fetch, file.data.len());
@@ -150,6 +150,9 @@ fn fetched_file_response(id: ShortGuid, file: FetchedFile) -> Response {
     ));
     if !content_type.is_empty() {
         headers.push((header::CONTENT_TYPE, content_type));
+    }
+    if let Some(expires_at) = file.expires_at {
+        headers.push((header::EXPIRES, system_time_as_rfc1123(expires_at)));
     }
 
     (AppendHeaders(headers), Body::from(file.data)).into_response()
@@ -437,6 +440,34 @@ mod endpoint_tests {
         let (status, _, _) = yoink(&fixture.state, id).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(fixture.backend.fetches(), 2);
+    }
+
+    #[tokio::test]
+    async fn served_backend_copy_expires_with_the_backend() {
+        use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+        let fixture = fixture(false);
+        let id = ShortGuid::new_random();
+        // Whole seconds, since HTTP dates have no sub-second precision.
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let expires_at = UNIX_EPOCH + Duration::from_secs(now + 60);
+        fixture.backend.insert(
+            id,
+            FetchedFile {
+                expires_at: Some(expires_at),
+                ..fetched_file(b"abc")
+            },
+        );
+
+        let (status, headers, _) = yoink(&fixture.state, id).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            headers.get("expires"),
+            Some(system_time_as_rfc1123(expires_at).as_str())
+        );
     }
 
     #[tokio::test]

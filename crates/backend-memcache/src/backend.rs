@@ -18,7 +18,7 @@ use r2d2_memcache::memcache::{MemcacheError, ToMemcacheValue};
 use shortguid::ShortGuid;
 use std::cell::Cell;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tokio::task::spawn_blocking;
 use tokio_util::io::SyncIoBridge;
 use tracing::trace;
@@ -75,7 +75,10 @@ impl DistributeFile for MemcacheBackend {
         let file = file_provider.get_file(id).await?;
         let client = self.pool.get().unwrap();
 
-        let metadata = ItemMetadata::new(id, &summary);
+        // An expiration of 0 keeps the entry indefinitely.
+        let expires_at =
+            (expiration != 0).then(|| SystemTime::now() + Duration::from_secs(expiration.into()));
+        let metadata = ItemMetadata::new(id, &summary, expires_at);
         let metadata_buf = metadata
             .serialize_to_proto()
             .map_err(|e| DistributionError::BackendSpecific(Box::new(e)))?;
@@ -138,7 +141,9 @@ impl FetchFile for MemcacheBackend {
             .ok_or_else(|| FetchError::InvalidMetadata("missing or malformed hashes".into()))?;
 
         trace!(file_id = %id, "Fetched file {id} from memcache");
+        let expires_at = metadata.expires_at();
         Ok(Some(FetchedFile {
+            expires_at,
             file_name: metadata.file_name,
             content_type: metadata.content_type,
             hashes,

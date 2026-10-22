@@ -13,7 +13,7 @@ use shortguid::ShortGuid;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{RwLock, mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -73,25 +73,40 @@ impl Backbone {
         content_md5: Option<[u8; 16]>,
         file_name: Option<String>,
     ) -> Result<FileWriterGuard, NewFileError> {
+        let registration = Registration {
+            origin: FileOrigin::Upload,
+            lease: self.temporal_lease,
+        };
         self.register_file(
             id,
             expected_size,
             content_type,
             content_md5,
             file_name,
-            FileOrigin::Upload,
+            registration,
         )
         .await
     }
 
     /// Buffers a file fetched from a backend so that subsequent reads are served
     /// locally (near cache). The file is not distributed to the backends again.
+    ///
+    /// The local lease never extends beyond the backend copy's expiry.
     pub async fn cache_file(
         &self,
         id: ShortGuid,
         file: &FetchedFile,
     ) -> Result<(), CacheFileError> {
         let content_type = file.content_type.as_deref().and_then(|c| c.parse().ok());
+        let retention = file.expires_at.map(|expires_at| {
+            expires_at
+                .duration_since(SystemTime::now())
+                .unwrap_or_default()
+        });
+        let registration = Registration {
+            origin: FileOrigin::Backend,
+            lease: retention.map_or(self.temporal_lease, |r| r.min(self.temporal_lease)),
+        };
         let mut writer = self
             .register_file(
                 id,
@@ -99,7 +114,7 @@ impl Backbone {
                 content_type,
                 Some(file.hashes.md5.0),
                 file.file_name.clone(),
-                FileOrigin::Backend,
+                registration,
             )
             .await?;
 
@@ -124,7 +139,7 @@ impl Backbone {
         content_type: Option<ContentType>,
         content_md5: Option<[u8; 16]>,
         file_name: Option<String>,
-        origin: FileOrigin,
+        registration: Registration,
     ) -> Result<FileWriterGuard, NewFileError> {
         // We reuse the ID such that it is easier to find and debug the
         // created file if necessary.
@@ -135,7 +150,7 @@ impl Backbone {
         let mut inner = self.inner.write().await;
         let (sender, receiver) = oneshot::channel();
 
-        let temporal_lease = self.temporal_lease;
+        let temporal_lease = registration.lease;
 
         // This needs to happen synchronously so that the moment we return the writer,
         // we know the entry exists.
@@ -156,7 +171,7 @@ impl Backbone {
                     content_type,
                     Instant::now(),
                 );
-                record.origin = origin;
+                record.origin = registration.origin;
                 let summary_slot = record.summary_slot();
                 v.insert(record);
                 summary_slot
@@ -252,6 +267,14 @@ pub enum BackboneCommand {
     RemoveWriter(ShortGuid),
     /// Marks the file ready for distribution to other backends.
     ReadyForDistribution(ShortGuid, Arc<WriteSummary>),
+}
+
+/// How a file is registered in the backbone.
+struct Registration {
+    /// Where the file came from.
+    origin: FileOrigin,
+    /// How long the file stays available to readers.
+    lease: Duration,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -473,6 +496,7 @@ mod tests {
             content_type: Some("text/plain".into()),
             hashes: FileHashes::new(md5.finalize(), sha256.finalize()),
             data: bytes::Bytes::from_static(data),
+            expires_at: None,
         }
     }
 
@@ -516,6 +540,25 @@ mod tests {
 
         let next = timeout(Duration::from_millis(100), fixture.backend_receiver.recv()).await;
         assert!(next.is_err(), "The cached file was distributed");
+    }
+
+    #[tokio::test]
+    async fn cached_file_does_not_outlive_the_backend_copy() {
+        let fixture = fixture(LONG_LEASE);
+        let id = ShortGuid::new_random();
+        let file = FetchedFile {
+            expires_at: Some(SystemTime::now() + Duration::from_millis(50)),
+            ..fetched_file(b"abc")
+        };
+
+        fixture
+            .backbone
+            .cache_file(id, &file)
+            .await
+            .expect("Failed to cache file");
+
+        // The local lease is capped to the backend's retention instead of an hour.
+        eventually(|| is_unknown(&fixture.backbone, id)).await;
     }
 
     #[tokio::test]

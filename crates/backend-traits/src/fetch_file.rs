@@ -4,6 +4,7 @@ use file_distribution::FileHashes;
 use file_distribution::hash::{HashMd5, HashSha256};
 use shortguid::ShortGuid;
 use std::error::Error;
+use std::time::SystemTime;
 
 #[async_trait]
 pub trait FetchFile: Send + Sync {
@@ -27,9 +28,19 @@ pub struct FetchedFile {
     pub hashes: FileHashes,
     /// The file content.
     pub data: Bytes,
+    /// When the backend's copy expires, or `None` if it is kept indefinitely.
+    ///
+    /// Copies must not be served or cached beyond this point.
+    pub expires_at: Option<SystemTime>,
 }
 
 impl FetchedFile {
+    /// Checks whether the backend's copy has expired.
+    pub fn is_expired(&self) -> bool {
+        self.expires_at
+            .is_some_and(|expires_at| expires_at <= SystemTime::now())
+    }
+
     /// Checks the content against the recorded hashes.
     pub fn is_intact(&self) -> bool {
         let mut md5 = HashMd5::new();
@@ -64,12 +75,27 @@ mod tests {
             content_type: None,
             hashes: FileHashes::new(md5.finalize(), sha256.finalize()),
             data: Bytes::from_static(data),
+            expires_at: None,
         }
     }
 
     #[test]
     fn matching_content_is_intact() {
         assert!(fetched(b"abc", b"abc").is_intact());
+    }
+
+    #[test]
+    fn expiry_is_checked_against_the_current_time() {
+        use std::time::Duration;
+
+        let mut file = fetched(b"abc", b"abc");
+        assert!(!file.is_expired());
+
+        file.expires_at = Some(SystemTime::now() + Duration::from_secs(60));
+        assert!(!file.is_expired());
+
+        file.expires_at = Some(SystemTime::now() - Duration::from_secs(1));
+        assert!(file.is_expired());
     }
 
     #[test]
