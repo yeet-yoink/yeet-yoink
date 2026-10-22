@@ -5,7 +5,3 @@ members =[
     "crates/*"
 ]
 resolver = "3"
-
-# Pending release of shared-files 0.5.0 (sunsided/shared-files-rs#7).
-[patch.crates-io]
-shared-files = { git = "https://github.com/sunsided/shared-files-rs", branch = "fail-abandoned-writer" }

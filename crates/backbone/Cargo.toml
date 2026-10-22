@@ -12,7 +12,7 @@ file-distribution = { path = "../file-distribution" }
 hex = "0.4.3"
 metrics = { path = "../metrics" }
 rendezvous = "0.3.0"
-shared-files = "0.4.0"
+shared-files = "0.5.0"
 shortguid = "0.7.0"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["io-std", "time"] }
