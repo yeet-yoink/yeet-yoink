@@ -22,7 +22,7 @@ axum-extra = { version = "0.12.6", features = ["typed-header"] }
 backbone = { version = "0.1.0", path = "../../crates/backbone" }
 backend-memcache = { version = "0.1.0", path = "../../crates/backend-memcache", optional = true }
 backend-traits = { version = "0.1.0", path = "../../crates/backend-traits" }
-base64 = "0.22.1"
+base64 = "0.23.1"
 bytes = "1.12.1"
 chrono = "0.4.45"
 clap = { version = "4.6.7", features = ["env"] }
@@ -40,7 +40,7 @@ mime-db = "1.8.0"
 percent-encoding = "2.3.2"
 pin-project = "1.1.13"
 problemdetails = { version = "0.7.0", features = ["axum"] }
-rendezvous = { version = "0.3.0", features = ["tokio", "log"] }
+rendezvous = { version = "0.4.0", features = ["tokio", "log"] }
 serde = { version = "1.0.229", features = ["derive"] }
 shared-files = "0.5.0"
 shortguid = { version = "0.7.0", features = ["serde"] }
