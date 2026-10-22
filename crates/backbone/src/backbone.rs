@@ -432,16 +432,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn aborted_upload_fails_open_readers() {
+    async fn aborted_upload_fails_open_readers() -> Result<(), GetFileReaderError> {
         let fixture = fixture(LONG_LEASE);
         let id = ShortGuid::new_random();
 
         let mut writer = new_file(&fixture.backbone, id, None, None).await;
         write_and_sync(&mut writer, b"abc").await;
-        let mut reader = match fixture.backbone.get_file(id).await {
-            Ok(reader) => reader,
-            Err(e) => panic!("Failed to get file: {e}"),
-        };
+        let mut reader = fixture.backbone.get_file(id).await?;
         drop(writer);
 
         // The reader must not mistake the truncated upload for a complete file.
@@ -451,6 +448,7 @@ mod tests {
             .expect("Reader timed out")
             .expect_err("Reader should observe the aborted upload");
         assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+        Ok(())
     }
 
     #[tokio::test]
