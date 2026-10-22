@@ -30,6 +30,8 @@ mod handlers;
 mod health;
 mod logging;
 mod services;
+#[cfg(test)]
+mod test_support;
 
 #[derive(Clone)]
 pub struct AppState {

@@ -246,3 +246,65 @@ impl BackendRegistryBuilder {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{FakeBackend, fetched_file};
+    use bytes::Bytes;
+
+    fn fetcher(backends: &[FakeBackend]) -> BackendFetcher {
+        BackendFetcher::new(Arc::new(
+            backends.iter().cloned().map(Backend::wrap).collect(),
+        ))
+    }
+
+    #[tokio::test]
+    async fn fetch_skips_failing_backends() {
+        let failing = FakeBackend::failing();
+        let healthy = FakeBackend::default();
+        let id = ShortGuid::new_random();
+        healthy.insert(id, fetched_file(b"abc"));
+
+        let file = fetcher(&[failing.clone(), healthy.clone()]).fetch(id).await;
+
+        assert_eq!(file.map(|f| f.data), Some(Bytes::from_static(b"abc")));
+        assert_eq!((failing.fetches(), healthy.fetches()), (1, 1));
+    }
+
+    #[tokio::test]
+    async fn fetch_skips_corrupt_copies() {
+        let corrupt = FakeBackend::default();
+        let healthy = FakeBackend::default();
+        let id = ShortGuid::new_random();
+        corrupt.insert(
+            id,
+            FetchedFile {
+                data: Bytes::from_static(b"abd"),
+                ..fetched_file(b"abc")
+            },
+        );
+        healthy.insert(id, fetched_file(b"abc"));
+
+        let file = fetcher(&[corrupt, healthy]).fetch(id).await;
+
+        assert_eq!(file.map(|f| f.data), Some(Bytes::from_static(b"abc")));
+    }
+
+    #[tokio::test]
+    async fn fetch_stops_at_the_first_hit() {
+        let first = FakeBackend::default();
+        let second = FakeBackend::default();
+        let id = ShortGuid::new_random();
+        first.insert(id, fetched_file(b"abc"));
+        second.insert(id, fetched_file(b"abc"));
+
+        assert!(fetcher(&[first, second.clone()]).fetch(id).await.is_some());
+        assert_eq!(second.fetches(), 0);
+    }
+
+    #[tokio::test]
+    async fn fetch_without_backends_finds_nothing() {
+        assert!(fetcher(&[]).fetch(ShortGuid::new_random()).await.is_none());
+    }
+}

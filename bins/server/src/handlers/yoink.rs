@@ -312,67 +312,16 @@ mod tests {
 mod endpoint_tests {
     use super::*;
     use crate::backend_registry::BackendFetcher;
-    use async_trait::async_trait;
+    use crate::test_support::{FakeBackend, fetched_file};
     use axum::http::Request;
     use backbone::{Backbone, CompletionMode};
-    use backend_traits::{
-        Backend, DistributeFile, DistributionError, FetchError, FetchFile, FetchedFile,
-    };
+    use backend_traits::{Backend, FetchedFile};
     use bytes::Bytes;
-    use file_distribution::hash::{HashMd5, HashSha256};
-    use file_distribution::{FileProvider, WriteSummary};
     use rendezvous::Rendezvous;
-    use std::collections::HashMap;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use std::time::Duration;
     use tokio::sync::{broadcast, mpsc};
     use tower::ServiceExt;
-
-    /// A backend that serves files from memory and counts fetches.
-    #[derive(Clone, Default)]
-    struct FakeBackend {
-        files: Arc<Mutex<HashMap<ShortGuid, FetchedFile>>>,
-        fetches: Arc<AtomicUsize>,
-    }
-
-    impl FakeBackend {
-        fn insert(&self, id: ShortGuid, file: FetchedFile) {
-            self.files.lock().unwrap().insert(id, file);
-        }
-
-        fn clear(&self) {
-            self.files.lock().unwrap().clear();
-        }
-
-        fn fetches(&self) -> usize {
-            self.fetches.load(Ordering::SeqCst)
-        }
-    }
-
-    #[async_trait]
-    impl DistributeFile for FakeBackend {
-        fn tag(&self) -> &str {
-            "fake"
-        }
-
-        async fn distribute_file(
-            &self,
-            _id: ShortGuid,
-            _summary: Arc<WriteSummary>,
-            _file_provider: FileProvider,
-        ) -> Result<(), DistributionError> {
-            Ok(())
-        }
-    }
-
-    #[async_trait]
-    impl FetchFile for FakeBackend {
-        async fn fetch_file(&self, id: ShortGuid) -> Result<Option<FetchedFile>, FetchError> {
-            self.fetches.fetch_add(1, Ordering::SeqCst);
-            Ok(self.files.lock().unwrap().get(&id).cloned())
-        }
-    }
 
     struct Fixture {
         state: AppState,
@@ -403,19 +352,6 @@ mod endpoint_tests {
             state,
             backend,
             _backend_receiver: backend_receiver,
-        }
-    }
-
-    fn fetched_file(data: &'static [u8]) -> FetchedFile {
-        let mut md5 = HashMd5::new();
-        md5.update(data);
-        let mut sha256 = HashSha256::new();
-        sha256.update(data);
-        FetchedFile {
-            file_name: Some("fetched.txt".into()),
-            content_type: Some("text/plain".into()),
-            hashes: FileHashes::new(md5.finalize(), sha256.finalize()),
-            data: Bytes::from_static(data),
         }
     }
 

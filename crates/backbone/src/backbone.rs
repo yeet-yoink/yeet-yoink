@@ -509,10 +509,10 @@ mod tests {
         let command = timeout(TEST_TIMEOUT, fixture.backend_receiver.recv())
             .await
             .expect("No backend command received in time");
-        let Some(BackendCommand::DistributeFile(distributed_id, _)) = command else {
-            panic!("Backend channel closed unexpectedly");
-        };
-        assert_eq!(distributed_id, uploaded);
+        assert!(matches!(
+            command,
+            Some(BackendCommand::DistributeFile(distributed_id, _)) if distributed_id == uploaded
+        ));
 
         let next = timeout(Duration::from_millis(100), fixture.backend_receiver.recv()).await;
         assert!(next.is_err(), "The cached file was distributed");
