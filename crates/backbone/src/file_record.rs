@@ -13,6 +13,15 @@ use tokio::sync::watch;
 use tokio::time::Instant;
 use tracing::{info, warn};
 
+/// Where a buffered file came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FileOrigin {
+    /// Uploaded by a client; distributed to the backends once complete.
+    Upload,
+    /// Fetched from a backend into the near cache; not distributed again.
+    Backend,
+}
+
 /// The read lease of a file: how long it stays available to readers, unless the
 /// backbone shuts down first.
 pub(crate) struct Lease {
@@ -30,7 +39,21 @@ pub(crate) struct FileRecord {
     pub created: Instant,
     /// The time after which the file will be inaccessible.
     pub expiration_duration: Duration,
+    /// Where the file came from.
+    pub origin: FileOrigin,
     inner: Arc<RwLock<Inner>>,
+}
+
+/// Records a file's write summary as soon as writing completes.
+///
+/// The writer sets the summary before reporting success, so that readers opened
+/// right after the write see the hashes and file name.
+pub(crate) struct SummarySlot(Arc<RwLock<Inner>>);
+
+impl SummarySlot {
+    pub async fn set(&self, summary: Arc<WriteSummary>) {
+        self.0.write().await.summary = Some(summary);
+    }
 }
 
 #[derive(Debug)]
@@ -69,6 +92,7 @@ impl FileRecord {
             content_type,
             created,
             expiration_duration,
+            origin: FileOrigin::Upload,
         }
     }
 
@@ -82,6 +106,11 @@ impl FileRecord {
                 .await
                 .map_err(|e| GetFileReaderError::FileError(self.id, e))?),
         }
+    }
+
+    /// Gets a handle for recording the write summary.
+    pub fn summary_slot(&self) -> SummarySlot {
+        SummarySlot(self.inner.clone())
     }
 
     /// Gets the file write summary or `None`, if the file writing hasn't completed yet.
@@ -129,12 +158,6 @@ impl FileRecord {
                 return;
             }
         };
-
-        // Persist the write summary.
-        {
-            let mut inner = inner.write().await;
-            inner.summary = Some(summary.clone());
-        }
 
         // Indicate the file is ready for processing.
         if let Err(error) = backbone_command

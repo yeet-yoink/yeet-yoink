@@ -1,10 +1,11 @@
+use crate::CompletionMode;
 use crate::file_reader::FileReader;
-use crate::file_record::{FileRecord, Lease};
-use crate::file_writer::FileWriter;
+use crate::file_record::{FileOrigin, FileRecord, Lease};
+use crate::file_writer::{FileWriter, FinalizationError, SynchronizationError};
 use crate::file_writer_guard::FileWriterGuard;
 use async_tempfile::TempFile;
 use axum_extra::headers::ContentType;
-use backend_traits::{BackendCommand, BackendCommandSender};
+use backend_traits::{BackendCommand, BackendCommandSender, FetchedFile};
 use file_distribution::{BoxedFileReader, GetFileReaderError, WriteSummary};
 use rendezvous::RendezvousGuard;
 use shared_files::{SharedFileWriter, SharedTemporaryFile};
@@ -12,7 +13,7 @@ use shortguid::ShortGuid;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{RwLock, mpsc, oneshot, watch};
 use tokio::time::Instant;
@@ -69,43 +70,119 @@ impl Backbone {
         content_md5: Option<[u8; 16]>,
         file_name: Option<String>,
     ) -> Result<FileWriterGuard, NewFileError> {
+        let registration = Registration {
+            origin: FileOrigin::Upload,
+            lease: self.temporal_lease,
+        };
+        self.register_file(
+            id,
+            expected_size,
+            content_type,
+            content_md5,
+            file_name,
+            registration,
+        )
+        .await
+    }
+
+    /// Buffers a file fetched from a backend so that subsequent reads are served
+    /// locally (near cache). The file is not distributed to the backends again.
+    ///
+    /// The local lease never extends beyond the backend copy's expiry.
+    pub async fn cache_file(
+        &self,
+        id: ShortGuid,
+        file: &FetchedFile,
+    ) -> Result<(), CacheFileError> {
+        let content_type = file.content_type.as_deref().and_then(|c| c.parse().ok());
+        let retention = file.expires_at.map(|expires_at| {
+            expires_at
+                .duration_since(SystemTime::now())
+                .unwrap_or_default()
+        });
+        let registration = Registration {
+            origin: FileOrigin::Backend,
+            lease: retention.map_or(self.temporal_lease, |r| r.min(self.temporal_lease)),
+        };
+        let mut writer = self
+            .register_file(
+                id,
+                Some(file.data.len() as u64),
+                content_type,
+                Some(file.hashes.md5.0),
+                file.file_name.clone(),
+                registration,
+            )
+            .await?;
+
+        let mut remaining = &file.data[..];
+        while !remaining.is_empty() {
+            let written = writer.write(remaining).await?;
+            if written == 0 {
+                return Err(CacheFileError::Write(std::io::ErrorKind::WriteZero.into()));
+            }
+            remaining = &remaining[written..];
+        }
+
+        writer.sync_data().await?;
+        writer.finalize(CompletionMode::NoSync).await?;
+        Ok(())
+    }
+
+    async fn register_file(
+        &self,
+        id: ShortGuid,
+        expected_size: Option<u64>,
+        content_type: Option<ContentType>,
+        content_md5: Option<[u8; 16]>,
+        file_name: Option<String>,
+        registration: Registration,
+    ) -> Result<FileWriterGuard, NewFileError> {
         // We reuse the ID such that it is easier to find and debug the
         // created file if necessary.
+        let content_type_name = content_type.as_ref().map(ToString::to_string);
         let file = Self::create_new_temporary_file(id).await?;
         let writer = Self::create_writer_for_file(id, &file).await?;
 
         let mut inner = self.inner.write().await;
         let (sender, receiver) = oneshot::channel();
 
-        let temporal_lease = self.temporal_lease;
+        let temporal_lease = registration.lease;
 
         // This needs to happen synchronously so that the moment we return the writer,
         // we know the entry exists.
-        match inner.open.entry(id) {
+        let summary_slot = match inner.open.entry(id) {
             Entry::Occupied(_) => {
                 // TODO: Actively mark the file as failed? This could invalidate all readers and writers.
                 drop(writer);
                 drop(file);
                 return Err(NewFileError::InternalErrorMayRetry(id));
             }
-            Entry::Vacant(v) => v.insert(FileRecord::new(
-                id,
-                file,
-                self.sender.clone(),
-                receiver,
-                Lease {
-                    duration: temporal_lease,
-                    shutdown: self.shutdown.subscribe(),
-                },
-                content_type,
-                Instant::now(),
-            )),
+            Entry::Vacant(v) => {
+                let mut record = FileRecord::new(
+                    id,
+                    file,
+                    self.sender.clone(),
+                    receiver,
+                    Lease {
+                        duration: temporal_lease,
+                        shutdown: self.shutdown.subscribe(),
+                    },
+                    content_type,
+                    Instant::now(),
+                );
+                record.origin = registration.origin;
+                let summary_slot = record.summary_slot();
+                v.insert(record);
+                summary_slot
+            }
         };
 
-        let writer = FileWriter::new(&id, writer, file_name);
+        let writer = FileWriter::new(&id, writer, file_name, content_type_name);
         Ok(FileWriterGuard::new(
             writer,
             sender,
+            summary_slot,
             temporal_lease,
             expected_size,
             content_md5,
@@ -160,6 +237,12 @@ impl Backbone {
                     inner.open.remove(&id);
                 }
                 BackboneCommand::ReadyForDistribution(id, summary) => {
+                    let origin = inner.read().await.open.get(&id).map(|file| file.origin);
+                    if origin == Some(FileOrigin::Backend) {
+                        info!(file_id = %id, "The file {id} was fetched from a backend and is not distributed again");
+                        continue;
+                    }
+
                     info!(file_id = %id, "The file {id} was buffered completely and can now be distributed");
                     backend_sender
                         .send(BackendCommand::DistributeFile(id, summary))
@@ -192,6 +275,26 @@ pub enum BackboneCommand {
     RemoveWriter(ShortGuid),
     /// Marks the file ready for distribution to other backends.
     ReadyForDistribution(ShortGuid, Arc<WriteSummary>),
+}
+
+/// How a file is registered in the backbone.
+struct Registration {
+    /// Where the file came from.
+    origin: FileOrigin,
+    /// How long the file stays available to readers.
+    lease: Duration,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum CacheFileError {
+    #[error(transparent)]
+    NewFile(#[from] NewFileError),
+    #[error("Failed to write the file: {0}")]
+    Write(#[from] std::io::Error),
+    #[error(transparent)]
+    Sync(#[from] SynchronizationError),
+    #[error(transparent)]
+    Finalize(#[from] FinalizationError),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -355,6 +458,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn summary_is_recorded_once_finalized() {
+        let fixture = fixture(LONG_LEASE);
+        let id = ShortGuid::new_random();
+
+        write_file(&fixture.backbone, id, b"abc")
+            .await
+            .expect("Failed to finalize");
+
+        // Inspect the record without yielding, so the lifetime task cannot run first.
+        let inner = fixture.backbone.inner.read().await;
+        let record = inner.open.get(&id).expect("Missing file record");
+        assert!(record.get_summary().await.is_some());
+    }
+
+    #[tokio::test]
     async fn finalized_file_is_sent_for_distribution() {
         let mut fixture = fixture(LONG_LEASE);
         let id = ShortGuid::new_random();
@@ -371,6 +489,104 @@ mod tests {
         };
         assert_eq!(distributed_id, id);
         assert_eq!(summary.file_size_bytes, 3);
+    }
+
+    fn fetched_file(data: &'static [u8]) -> FetchedFile {
+        use file_distribution::FileHashes;
+        use file_distribution::hash::{HashMd5, HashSha256};
+
+        let mut md5 = HashMd5::new();
+        md5.update(data);
+        let mut sha256 = HashSha256::new();
+        sha256.update(data);
+        FetchedFile {
+            file_name: Some("cached.txt".into()),
+            content_type: Some("text/plain".into()),
+            hashes: FileHashes::new(md5.finalize(), sha256.finalize()),
+            data: bytes::Bytes::from_static(data),
+            expires_at: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn cached_file_can_be_read_back() {
+        let fixture = fixture(LONG_LEASE);
+        let id = ShortGuid::new_random();
+
+        fixture
+            .backbone
+            .cache_file(id, &fetched_file(b"abc"))
+            .await
+            .expect("Failed to cache file");
+
+        assert_eq!(read_file(&fixture.backbone, id).await, b"abc");
+    }
+
+    #[tokio::test]
+    async fn cached_file_is_not_distributed_again() {
+        let mut fixture = fixture(LONG_LEASE);
+        let cached = ShortGuid::new_random();
+        let uploaded = ShortGuid::new_random();
+
+        fixture
+            .backbone
+            .cache_file(cached, &fetched_file(b"abc"))
+            .await
+            .expect("Failed to cache file");
+        write_file(&fixture.backbone, uploaded, b"def")
+            .await
+            .expect("Failed to finalize");
+
+        // Only the uploaded file is handed to the backends.
+        let command = timeout(TEST_TIMEOUT, fixture.backend_receiver.recv())
+            .await
+            .expect("No backend command received in time");
+        assert!(matches!(
+            command,
+            Some(BackendCommand::DistributeFile(distributed_id, _)) if distributed_id == uploaded
+        ));
+
+        let next = timeout(Duration::from_millis(100), fixture.backend_receiver.recv()).await;
+        assert!(next.is_err(), "The cached file was distributed");
+    }
+
+    #[tokio::test]
+    async fn cached_file_does_not_outlive_the_backend_copy() {
+        let fixture = fixture(LONG_LEASE);
+        let id = ShortGuid::new_random();
+        let file = FetchedFile {
+            expires_at: Some(SystemTime::now() + Duration::from_millis(50)),
+            ..fetched_file(b"abc")
+        };
+
+        fixture
+            .backbone
+            .cache_file(id, &file)
+            .await
+            .expect("Failed to cache file");
+
+        // The local lease is capped to the backend's retention instead of an hour.
+        eventually(|| is_unknown(&fixture.backbone, id)).await;
+    }
+
+    #[tokio::test]
+    async fn corrupt_cached_file_is_rejected() {
+        let fixture = fixture(LONG_LEASE);
+        let id = ShortGuid::new_random();
+        let file = FetchedFile {
+            data: bytes::Bytes::from_static(b"abd"),
+            ..fetched_file(b"abc")
+        };
+
+        let result = fixture.backbone.cache_file(id, &file).await;
+
+        assert!(matches!(
+            result,
+            Err(CacheFileError::Finalize(
+                FinalizationError::IntegrityCheckFailed(..)
+            ))
+        ));
+        eventually(|| is_unknown(&fixture.backbone, id)).await;
     }
 
     #[tokio::test]

@@ -1,3 +1,4 @@
+use crate::FetchFile;
 use async_trait::async_trait;
 use file_distribution::{FileAccessorError, FileProvider, WriteSummary};
 use shortguid::ShortGuid;
@@ -20,7 +21,12 @@ pub trait DistributeFile: Send + Sync {
     ) -> Result<(), DistributionError>;
 }
 
-/// [`Backend`] is a wrapper struct that holds a dynamically dispatched [`DistributeFile`] instance.
+/// A storage backend: it receives files for distribution and can serve them back.
+pub trait StorageBackend: DistributeFile + FetchFile {}
+
+impl<T> StorageBackend for T where T: DistributeFile + FetchFile {}
+
+/// [`Backend`] is a wrapper struct that holds a dynamically dispatched [`StorageBackend`] instance.
 ///
 /// # Example
 ///
@@ -28,7 +34,7 @@ pub trait DistributeFile: Send + Sync {
 /// use std::sync::Arc;
 /// use async_trait::async_trait;
 /// use shortguid::ShortGuid;
-/// use backend_traits::{DistributeFile, DistributionError, Backend};
+/// use backend_traits::{Backend, DistributeFile, DistributionError, FetchError, FetchFile, FetchedFile};
 /// use file_distribution::{FileProvider, WriteSummary};
 ///
 /// struct PostgresBackend;
@@ -43,41 +49,36 @@ pub trait DistributeFile: Send + Sync {
 ///     }
 /// }
 ///
-/// struct MySqlBackend;
-///
 /// #[async_trait]
-/// impl DistributeFile for MySqlBackend {
-///     fn tag(&self) -> &str { "mysql" }
-///
-///     async fn distribute_file(&self, id: ShortGuid, summary: Arc<WriteSummary>, file_accessor: FileProvider) -> Result<(), DistributionError> {
+/// impl FetchFile for PostgresBackend {
+///     async fn fetch_file(&self, id: ShortGuid) -> Result<Option<FetchedFile>, FetchError> {
 ///         // ...
-/// #        Ok(())
+/// #       Ok(None)
 ///     }
 /// }
 ///
 /// let postgres_backend = Backend::wrap(PostgresBackend);
-/// let my_sql_backend = Backend::wrap(MySqlBackend);
 /// ```
-pub struct Backend(Box<dyn DistributeFile>);
+pub struct Backend(Box<dyn StorageBackend>);
 
 impl Backend {
     pub fn new<T>(b: Box<T>) -> Self
     where
-        T: DistributeFile + 'static,
+        T: StorageBackend + 'static,
     {
         Backend(b)
     }
 
     pub fn wrap<T>(b: T) -> Self
     where
-        T: DistributeFile + 'static,
+        T: StorageBackend + 'static,
     {
         Self::new(Box::new(b))
     }
 }
 
 impl Deref for Backend {
-    type Target = dyn DistributeFile;
+    type Target = dyn StorageBackend;
 
     fn deref(&self) -> &Self::Target {
         &*self.0
@@ -86,7 +87,7 @@ impl Deref for Backend {
 
 impl<T> From<Box<T>> for Backend
 where
-    T: DistributeFile + 'static,
+    T: StorageBackend + 'static,
 {
     fn from(b: Box<T>) -> Self {
         Backend::new(b)

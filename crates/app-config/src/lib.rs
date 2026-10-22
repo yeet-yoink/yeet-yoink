@@ -30,6 +30,11 @@ const fn default_lease_secs() -> u64 {
     5 * 60
 }
 
+/// The near cache is enabled by default.
+const fn default_near_cache() -> bool {
+    true
+}
+
 /// Configuration of the local file cache.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CacheConfig {
@@ -37,12 +42,17 @@ pub struct CacheConfig {
     /// it was written. Defaults to [`default_lease_secs`].
     #[serde(default = "default_lease_secs")]
     pub lease_duration_secs: u64,
+    /// Whether files fetched from a backend are buffered locally again, so that
+    /// repeated reads are served without contacting the backend. Defaults to `true`.
+    #[serde(default = "default_near_cache")]
+    pub near_cache: bool,
 }
 
 impl Default for CacheConfig {
     fn default() -> Self {
         Self {
             lease_duration_secs: default_lease_secs(),
+            near_cache: default_near_cache(),
         }
     }
 }
@@ -124,6 +134,20 @@ mod tests {
     fn cache_config_uses_default_when_field_missing() {
         let config: CacheConfig = serde_yaml::from_str("{}").expect("Failed to deserialize");
         assert_eq!(config.lease_duration(), Duration::from_secs(300));
+    }
+
+    #[test]
+    fn near_cache_is_enabled_by_default() {
+        assert!(CacheConfig::default().near_cache);
+        let config: CacheConfig = serde_yaml::from_str("{}").expect("Failed to deserialize");
+        assert!(config.near_cache);
+    }
+
+    #[test]
+    fn near_cache_can_be_disabled() {
+        let config: CacheConfig =
+            serde_yaml::from_str("near_cache: false").expect("Failed to deserialize");
+        assert!(!config.near_cache);
     }
 
     #[test]

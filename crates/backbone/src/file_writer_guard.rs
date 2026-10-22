@@ -1,4 +1,5 @@
 use crate::CompletionMode;
+use crate::file_record::SummarySlot;
 use crate::file_writer::{FileWriter, FinalizationError, err_broken_pipe};
 use file_distribution::WriteSummary;
 use metrics::transfer::{TransferMethod, TransferMetrics};
@@ -18,6 +19,8 @@ pub struct FileWriterGuard {
     inner: Option<FileWriter>,
     /// The sender to communicate with the backbone.
     sender: Option<Sender<WriteResult>>,
+    /// Where the write summary is recorded on success.
+    summary_slot: SummarySlot,
     /// The expiration time of this file.
     expiration: Duration,
     /// The actual file size as per bookkeeping.
@@ -38,9 +41,10 @@ pub enum WriteResult {
 }
 
 impl FileWriterGuard {
-    pub fn new(
+    pub(crate) fn new(
         writer: FileWriter,
         sender: Sender<WriteResult>,
+        summary_slot: SummarySlot,
         expiration: Duration,
         expected_size: Option<u64>,
         content_md5: Option<[u8; 16]>,
@@ -48,6 +52,7 @@ impl FileWriterGuard {
         Self {
             inner: Some(writer),
             sender: Some(sender),
+            summary_slot,
             expiration,
             file_size: 0,
             expected_size,
@@ -110,6 +115,9 @@ impl FileWriterGuard {
                 ));
             }
 
+            // Record the summary before signalling success, so that it is
+            // visible to readers once `finalize` returns.
+            self.summary_slot.set(summary.clone()).await;
             self.try_signal_success(&summary)?;
             Ok(summary)
         } else {

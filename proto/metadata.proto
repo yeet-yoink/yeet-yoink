@@ -6,6 +6,10 @@ message ItemMetadata {
   bytes id = 1;
   optional string file_name = 2;
   Hashes hashes = 3;
+  optional string content_type = 4;
+  // When the backend's copy expires, in milliseconds since the Unix epoch.
+  // Unset if the backend keeps the file indefinitely.
+  optional uint64 expires_at_unix_ms = 5;
   // TODO: Add creation timestamp
 }
 

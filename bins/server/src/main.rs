@@ -19,7 +19,7 @@ use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, warn};
 
-use crate::backend_registry::BackendRegistry;
+use crate::backend_registry::{BackendFetcher, BackendRegistry};
 #[cfg(feature = "memcache")]
 use backend_memcache::MemcacheBackend;
 use file_distribution::FileProvider;
@@ -30,11 +30,17 @@ mod handlers;
 mod health;
 mod logging;
 mod services;
+#[cfg(test)]
+mod test_support;
 
 #[derive(Clone)]
 pub struct AppState {
     shutdown_tx: broadcast::Sender<()>,
     backbone: Arc<Backbone>,
+    /// Fetches files that are not (or no longer) buffered locally.
+    backends: BackendFetcher,
+    /// Whether files fetched from a backend are buffered locally again.
+    near_cache: bool,
 }
 
 #[tokio::main]
@@ -96,6 +102,8 @@ async fn main() -> ExitCode {
     let app_state = AppState {
         shutdown_tx: shutdown_tx.clone(),
         backbone: backbone.clone(),
+        backends: registry.fetcher(),
+        near_cache: cfg.cache.near_cache,
     };
 
     let exit_code = serve_requests(matches, app_state).await.err();
@@ -116,6 +124,17 @@ fn shut_down_backbone(backbone: Arc<Backbone>) {
     assert_eq!(Arc::strong_count(&backbone), 1);
 }
 
+fn router(app_state: AppState) -> Router {
+    Router::new()
+        .map_metrics_endpoint()
+        .map_shutdown_endpoint()
+        .map_yeet_endpoint()
+        .map_yoink_endpoint()
+        .map_health_endpoints()
+        .with_state(app_state)
+        .layer(services::HttpCallMetricsLayer)
+}
+
 fn stop_all_servers(shutdown_tx: broadcast::Sender<()>) {
     // We take ownership of this channel so that it'll be closed after.
     shutdown_tx.send(()).ok();
@@ -124,14 +143,7 @@ fn stop_all_servers(shutdown_tx: broadcast::Sender<()>) {
 async fn serve_requests(matches: ArgMatches, app_state: AppState) -> Result<(), ExitCode> {
     let shutdown_tx = app_state.shutdown_tx.clone();
 
-    let app = Router::new()
-        .map_metrics_endpoint()
-        .map_shutdown_endpoint()
-        .map_yeet_endpoint()
-        .map_yoink_endpoint()
-        .map_health_endpoints()
-        .with_state(app_state)
-        .layer(services::HttpCallMetricsLayer);
+    let app = router(app_state);
 
     // Get the HTTP socket addresses to bind on.
     let http_sockets: Vec<SocketAddr> = matches

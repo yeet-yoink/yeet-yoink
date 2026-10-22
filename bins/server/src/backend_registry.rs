@@ -1,11 +1,12 @@
 use app_config::AppConfig;
 use backend_traits::{
-    Backend, BackendCommand, BackendCommandSender, BackendRegistration, RegisterBackendError,
-    TryCreateFromConfig,
+    Backend, BackendCommand, BackendCommandSender, BackendRegistration, FetchedFile,
+    RegisterBackendError, TryCreateFromConfig,
 };
 use file_distribution::FileProvider;
 use futures::future::join_all;
 use rendezvous::RendezvousGuard;
+use shortguid::ShortGuid;
 use std::cell::Cell;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -20,6 +21,7 @@ pub struct BackendRegistry {
     #[allow(dead_code)]
     handle: JoinHandle<()>,
     sender: Cell<Option<Sender<BackendCommand>>>,
+    backends: Arc<Vec<Backend>>,
 }
 
 impl BackendRegistry {
@@ -36,8 +38,9 @@ impl BackendRegistry {
         file_accessor: FileProvider,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(EVENT_BUFFER_SIZE);
+        let backends = Arc::new(backends);
         let handle = tokio::spawn(Self::handle_events(
-            Arc::new(backends),
+            backends.clone(),
             receiver,
             cleanup_rendezvous,
             file_accessor,
@@ -45,11 +48,17 @@ impl BackendRegistry {
         Self {
             handle,
             sender: Cell::new(Some(sender)),
+            backends,
         }
     }
 
     pub(crate) fn get_sender(&self) -> Option<BackendCommandSender> {
         self.sender.take().map(BackendCommandSender::from)
+    }
+
+    /// Gets a handle for fetching files from the registered backends.
+    pub(crate) fn fetcher(&self) -> BackendFetcher {
+        BackendFetcher::new(self.backends.clone())
     }
 
     /// Awaits the backend event loop. Reserved for graceful shutdown wiring.
@@ -98,6 +107,45 @@ impl BackendRegistry {
 
         debug!("Closing backend event loop");
         cleanup_rendezvous.completed();
+    }
+}
+
+/// Fetches files from the registered backends.
+#[derive(Clone)]
+pub struct BackendFetcher {
+    backends: Arc<Vec<Backend>>,
+}
+
+impl BackendFetcher {
+    pub(crate) fn new(backends: Arc<Vec<Backend>>) -> Self {
+        Self { backends }
+    }
+
+    /// Fetches a file from the first backend that holds an intact, unexpired copy.
+    ///
+    /// Backends are queried in registration order. Errors, expired and corrupt
+    /// copies are logged and skipped.
+    // TODO(#58): query backends in configured priority order.
+    pub async fn fetch(&self, id: ShortGuid) -> Option<FetchedFile> {
+        for backend in self.backends.iter() {
+            match backend.fetch_file(id).await {
+                Ok(Some(file)) if file.is_expired() => {
+                    debug!(file_id = %id, "Backend {tag} returned an expired copy of file {id}", tag = backend.tag());
+                }
+                Ok(Some(file)) if file.is_intact() => {
+                    debug!(file_id = %id, "Fetched file {id} from backend {tag}", tag = backend.tag());
+                    return Some(file);
+                }
+                Ok(Some(_)) => {
+                    warn!(file_id = %id, "Backend {tag} returned a corrupt copy of file {id}", tag = backend.tag());
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    warn!(file_id = %id, "Failed to fetch file {id} from backend {tag}: {error}", tag = backend.tag(), error = e);
+                }
+            }
+        }
+        None
     }
 }
 
@@ -199,5 +247,84 @@ impl BackendRegistryBuilder {
     ) -> BackendRegistryBuilder {
         self.backends.extend(backends);
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{FakeBackend, fetched_file};
+    use bytes::Bytes;
+
+    fn fetcher(backends: &[FakeBackend]) -> BackendFetcher {
+        BackendFetcher::new(Arc::new(
+            backends.iter().cloned().map(Backend::wrap).collect(),
+        ))
+    }
+
+    #[tokio::test]
+    async fn fetch_skips_failing_backends() {
+        let failing = FakeBackend::failing();
+        let healthy = FakeBackend::default();
+        let id = ShortGuid::new_random();
+        healthy.insert(id, fetched_file(b"abc"));
+
+        let file = fetcher(&[failing.clone(), healthy.clone()]).fetch(id).await;
+
+        assert_eq!(file.map(|f| f.data), Some(Bytes::from_static(b"abc")));
+        assert_eq!((failing.fetches(), healthy.fetches()), (1, 1));
+    }
+
+    #[tokio::test]
+    async fn fetch_skips_corrupt_copies() {
+        let corrupt = FakeBackend::default();
+        let healthy = FakeBackend::default();
+        let id = ShortGuid::new_random();
+        corrupt.insert(
+            id,
+            FetchedFile {
+                data: Bytes::from_static(b"abd"),
+                ..fetched_file(b"abc")
+            },
+        );
+        healthy.insert(id, fetched_file(b"abc"));
+
+        let file = fetcher(&[corrupt, healthy]).fetch(id).await;
+
+        assert_eq!(file.map(|f| f.data), Some(Bytes::from_static(b"abc")));
+    }
+
+    #[tokio::test]
+    async fn fetch_skips_expired_copies() {
+        use std::time::{Duration, SystemTime};
+
+        let expired = FakeBackend::default();
+        let id = ShortGuid::new_random();
+        expired.insert(
+            id,
+            FetchedFile {
+                expires_at: Some(SystemTime::now() - Duration::from_secs(1)),
+                ..fetched_file(b"abc")
+            },
+        );
+
+        assert!(fetcher(&[expired]).fetch(id).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn fetch_stops_at_the_first_hit() {
+        let first = FakeBackend::default();
+        let second = FakeBackend::default();
+        let id = ShortGuid::new_random();
+        first.insert(id, fetched_file(b"abc"));
+        second.insert(id, fetched_file(b"abc"));
+
+        assert!(fetcher(&[first, second.clone()]).fetch(id).await.is_some());
+        assert_eq!(second.fetches(), 0);
+    }
+
+    #[tokio::test]
+    async fn fetch_without_backends_finds_nothing() {
+        assert!(fetcher(&[]).fetch(ShortGuid::new_random()).await.is_none());
     }
 }
