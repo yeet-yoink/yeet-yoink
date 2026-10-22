@@ -119,6 +119,7 @@ async fn main() -> ExitCode {
     exit_code.unwrap_or(ExitCode::SUCCESS)
 }
 
+/// Drops the last reference to the backbone, which ends all pending file leases.
 fn shut_down_backbone(backbone: Arc<Backbone>) {
     assert_eq!(Arc::strong_count(&backbone), 1);
 }
