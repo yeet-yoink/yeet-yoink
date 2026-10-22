@@ -140,15 +140,35 @@ mod tests {
         let valid_result: Result<MemcacheConnectionString, _> = valid_conn_str.parse();
         let invalid_result: Result<MemcacheConnectionString, _> = invalid_conn_str.parse();
 
-        match valid_result {
-            Ok(conn_str) => println!("Valid connection string: {}", conn_str),
-            Err(err) => println!("Error parsing connection string: {}", err),
-        }
+        assert_eq!(valid_result.expect("Failed to parse"), valid_conn_str);
+        assert!(matches!(
+            invalid_result,
+            Err(MemcacheConnectionStringError::InvalidFormat)
+        ));
+    }
 
-        match invalid_result {
-            Ok(conn_str) => println!("Valid connection string: {}", conn_str),
-            Err(err) => println!("Error parsing connection string: {}", err),
-        }
+    #[test]
+    fn connection_string_rejects_other_schemes() {
+        let result: Result<MemcacheConnectionString, _> = "redis://127.0.0.1:6379".parse();
+        assert!(matches!(
+            result,
+            Err(MemcacheConnectionStringError::InvalidFormat)
+        ));
+    }
+
+    #[test]
+    fn connection_string_get_urls() {
+        let conn_str: MemcacheConnectionString = "memcache://127.0.0.1:12345"
+            .parse()
+            .expect("Failed to parse");
+        assert_eq!(conn_str.get_urls(), vec!["memcache://127.0.0.1:12345"]);
+        assert!(MemcacheConnectionString::default().get_urls().is_empty());
+    }
+
+    #[test]
+    fn deserialize_rejects_invalid_connection_string() {
+        let result: Result<MemcacheConnectionString, _> = serde_yaml::from_str("invalid_url");
+        assert!(result.is_err());
     }
 
     #[test]

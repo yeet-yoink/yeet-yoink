@@ -54,3 +54,56 @@ impl Default for HashSha256 {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn md5_hex(chunks: &[&[u8]]) -> String {
+        let mut hash = HashMd5::new();
+        for chunk in chunks {
+            hash.update(chunk);
+        }
+        format!("{:x}", hash.finalize())
+    }
+
+    fn sha256_hex(chunks: &[&[u8]]) -> String {
+        let mut hash = HashSha256::new();
+        for chunk in chunks {
+            hash.update(chunk);
+        }
+        hex::encode(hash.finalize())
+    }
+
+    #[test]
+    fn md5_of_empty_input() {
+        assert_eq!(md5_hex(&[]), "d41d8cd98f00b204e9800998ecf8427e");
+    }
+
+    #[test]
+    fn md5_known_vector() {
+        assert_eq!(md5_hex(&[b"abc"]), "900150983cd24fb0d6963f7d28e17f72");
+    }
+
+    #[test]
+    fn sha256_of_empty_input() {
+        assert_eq!(
+            sha256_hex(&[]),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
+    #[test]
+    fn sha256_known_vector() {
+        assert_eq!(
+            sha256_hex(&[b"abc"]),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn chunked_updates_match_single_update() {
+        assert_eq!(md5_hex(&[b"a", b"", b"bc"]), md5_hex(&[b"abc"]));
+        assert_eq!(sha256_hex(&[b"a", b"", b"bc"]), sha256_hex(&[b"abc"]));
+    }
+}

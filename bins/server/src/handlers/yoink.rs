@@ -201,3 +201,59 @@ fn map_file_reader_error_to_response(value: GetFileReaderError) -> Response {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_id() -> ShortGuid {
+        ShortGuid::from_bytes([1u8; 16])
+    }
+
+    #[test]
+    fn uses_id_when_no_name_and_no_content_type() {
+        let id = test_id();
+        let (name, value) = content_disposition_from_optional_name(id, &String::new(), &None);
+        assert_eq!(name, header::CONTENT_DISPOSITION);
+        assert_eq!(value, format!("attachment; filename=\"{id}\""));
+    }
+
+    #[test]
+    fn appends_extension_for_known_content_type() {
+        let id = test_id();
+        let (_, value) =
+            content_disposition_from_optional_name(id, &"application/json".to_string(), &None);
+        assert_eq!(value, format!("attachment; filename=\"{id}.json\""));
+    }
+
+    #[test]
+    fn omits_extension_for_unknown_content_type() {
+        let id = test_id();
+        let (_, value) = content_disposition_from_optional_name(
+            id,
+            &"application/x-yeet-yoink-unknown".to_string(),
+            &None,
+        );
+        assert_eq!(value, format!("attachment; filename=\"{id}\""));
+    }
+
+    #[test]
+    fn prefers_explicit_file_name() {
+        let (_, value) = content_disposition_from_optional_name(
+            test_id(),
+            &"application/json".to_string(),
+            &Some("report.txt".to_string()),
+        );
+        assert_eq!(value, "attachment; filename=\"report.txt\"");
+    }
+
+    #[test]
+    fn escapes_unsafe_characters_in_file_name() {
+        let (_, value) = content_disposition_from_optional_name(
+            test_id(),
+            &String::new(),
+            &Some("my \"file\".txt".to_string()),
+        );
+        assert_eq!(value, "attachment; filename=\"my%20%22file%22.txt\"");
+    }
+}

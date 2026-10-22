@@ -108,3 +108,58 @@ impl AppConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cache_config_defaults_to_five_minutes() {
+        let config = CacheConfig::default();
+        assert_eq!(config.lease_duration_secs, 300);
+        assert_eq!(config.lease_duration(), Duration::from_secs(300));
+    }
+
+    #[test]
+    fn cache_config_uses_default_when_field_missing() {
+        let config: CacheConfig = serde_yaml::from_str("{}").expect("Failed to deserialize");
+        assert_eq!(config.lease_duration(), Duration::from_secs(300));
+    }
+
+    #[test]
+    fn cache_config_lease_is_configurable() {
+        let config: CacheConfig =
+            serde_yaml::from_str("lease_duration_secs: 42").expect("Failed to deserialize");
+        assert_eq!(config.lease_duration(), Duration::from_secs(42));
+    }
+
+    #[test]
+    #[cfg(feature = "memcache")]
+    fn example_config_deserializes() {
+        let yaml = include_str!("../../../example-config.yaml");
+        let config: AppConfig = serde_yaml::from_str(yaml).expect("Failed to deserialize");
+
+        // The example does not specify a cache section, so the default applies.
+        assert_eq!(config.cache.lease_duration(), Duration::from_secs(300));
+
+        assert_eq!(config.backends.memcache.len(), 1);
+        let memcache = &config.backends.memcache[0];
+        assert_eq!(memcache.tag, "memcache-1");
+        assert_eq!(memcache.expiration_sec, Some(500));
+    }
+
+    #[test]
+    #[cfg(feature = "memcache")]
+    fn app_config_reads_cache_section() {
+        let yaml = r#"
+            version: 0
+            cache:
+              lease_duration_secs: 10
+            backends:
+              memcache: []
+        "#;
+        let config: AppConfig = serde_yaml::from_str(yaml).expect("Failed to deserialize");
+        assert_eq!(config.cache.lease_duration(), Duration::from_secs(10));
+        assert!(config.backends.memcache.is_empty());
+    }
+}
