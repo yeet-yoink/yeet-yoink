@@ -11,7 +11,8 @@ edition = "2024"
 rust-version = "1.95.0"
 
 [features]
-default = ["memcache", "valkey", "gcs", "azure"]
+default = ["memcache", "valkey", "gcs", "azure", "s3"]
+s3 = ["dep:backend-s3", "app-config/s3"]
 azure = ["dep:backend-azure", "app-config/azure"]
 gcs = ["dep:backend-gcs", "app-config/gcs"]
 memcache = ["dep:backend-memcache", "app-config/memcache"]
@@ -26,6 +27,7 @@ backbone = { version = "0.1.0", path = "../../crates/backbone" }
 backend-azure = { version = "0.1.0", path = "../../crates/backend-azure", optional = true }
 backend-gcs = { version = "0.1.0", path = "../../crates/backend-gcs", optional = true }
 backend-memcache = { version = "0.1.0", path = "../../crates/backend-memcache", optional = true }
+backend-s3 = { version = "0.1.0", path = "../../crates/backend-s3", optional = true }
 backend-traits = { version = "0.1.0", path = "../../crates/backend-traits" }
 cluster = { version = "0.1.0", path = "../../crates/cluster" }
 backend-valkey = { version = "0.1.0", path = "../../crates/backend-valkey", optional = true }

@@ -9,6 +9,8 @@ pub mod cluster;
 pub mod gcs;
 #[cfg(feature = "memcache")]
 pub mod memcache;
+#[cfg(feature = "s3")]
+pub mod s3;
 #[cfg(feature = "valkey")]
 pub mod valkey;
 
@@ -97,6 +99,11 @@ pub struct BackendsConfig {
     #[cfg(feature = "azure")]
     #[serde(default)]
     pub azure: Vec<azure::AzureBackendConfig>,
+    /// Provides Amazon S3 and S3-compatible configuration.
+    #[cfg_attr(docsrs, doc(cfg(feature = "s3")))]
+    #[cfg(feature = "s3")]
+    #[serde(default)]
+    pub s3: Vec<s3::S3BackendConfig>,
 }
 
 impl AppConfig {
@@ -227,6 +234,22 @@ mod tests {
         assert_eq!(valkey.expiration_sec, Some(3600));
         assert_eq!(valkey.max_file_size_bytes, Some(64 * 1024 * 1024));
         assert_eq!(valkey.priority, 10);
+    }
+
+    #[test]
+    #[cfg(feature = "s3")]
+    fn example_config_deserializes_s3() {
+        let yaml = include_str!("../../../example-config.yaml");
+        let config: AppConfig = serde_yaml::from_str(yaml).expect("Failed to deserialize");
+
+        assert_eq!(config.backends.s3.len(), 1);
+        let s3 = &config.backends.s3[0];
+        assert_eq!(s3.tag, "s3-1");
+        assert_eq!(s3.bucket, "yeet-yoink");
+        assert_eq!(s3.region.as_deref(), Some("eu-central-1"));
+        assert_eq!(s3.endpoint, None);
+        assert_eq!(s3.access_key_id_file, None);
+        assert_eq!(s3.expiration_sec, Some(86400));
     }
 
     #[test]

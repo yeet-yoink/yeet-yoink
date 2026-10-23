@@ -421,6 +421,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "backend-s3"
+version = "0.1.0"
+dependencies = [
+ "app-config",
+ "axum-extra",
+ "backbone",
+ "backend-object-store",
+ "backend-traits",
+ "file-distribution",
+ "object_store",
+ "rendezvous",
+ "reqwest 0.13.5",
+ "shortguid",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "backend-traits"
 version = "0.1.0"
 dependencies = [
@@ -814,6 +832,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5ca28b0ae3115b884660db4118d803791fd6756b6e88f39c0f3f7859060d7566"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "crc-fast"
+version = "1.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e75b2483e97a5a7da73ac68a05b629f9c53cff58d8ed1c77866079e18b00dba5"
+dependencies = [
+ "digest 0.10.7",
+ "spin",
 ]
 
 [[package]]
@@ -2034,6 +2062,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 
 [[package]]
+name = "md-5"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69b6441f590336821bb897fb28fc622898ccceb1d6cea3fde5ea86b090c4de98"
+dependencies = [
+ "cfg-if",
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "md5"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2181,6 +2219,7 @@ dependencies = [
  "base64 0.23.1",
  "bytes",
  "chrono",
+ "crc-fast",
  "form_urlencoded",
  "futures-channel",
  "futures-core",
@@ -2191,6 +2230,7 @@ dependencies = [
  "humantime",
  "hyper 1.10.1",
  "itertools 0.15.0",
+ "md-5",
  "parking_lot",
  "percent-encoding",
  "quick-xml",
@@ -3237,6 +3277,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "spin"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "023a211cb3138dbc438680b32560ad89f699977624c9f8dbb95a47d5b4c07dd3"
+
+[[package]]
 name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4135,6 +4181,7 @@ dependencies = [
  "backend-azure",
  "backend-gcs",
  "backend-memcache",
+ "backend-s3",
  "backend-traits",
  "backend-valkey",
  "base64 0.23.1",

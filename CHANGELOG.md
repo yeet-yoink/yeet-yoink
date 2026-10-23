@@ -29,6 +29,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the environment such as AKS workload identity). As with Google Cloud Storage, the expiry is
   checked on fetch and a lifecycle management policy should delete old blobs. Both share one
   implementation, which stores file metadata as the custom attribute `yymetadata`.
+- Files can be distributed to and fetched from Amazon S3 and S3-compatible stores (MinIO, Ceph,
+  SeaweedFS, Cloudflare R2, ...) via `backends.s3`: bucket, optional prefix, region and endpoint,
+  path-style or virtual-hosted addressing, and key files or credentials from the environment
+  such as EKS service account roles. Like the other object stores, the expiry is checked on
+  fetch and a lifecycle rule should delete old objects.
 - Instances find each other through a `cluster` section, within and across Kubernetes
   namespaces: seeds name headless services, gossip runs over UDP, encrypted and authenticated
   with a shared secret (AES-256-GCM, key derived with HKDF-SHA256). Settings can be overridden

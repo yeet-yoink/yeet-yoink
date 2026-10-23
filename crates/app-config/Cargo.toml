@@ -8,6 +8,7 @@ memcache = []
 valkey = []
 gcs = ["url/serde"]
 azure = ["url/serde"]
+s3 = ["url/serde"]
 
 [dependencies]
 clap = "4.6.7"

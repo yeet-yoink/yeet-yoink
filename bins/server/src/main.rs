@@ -26,6 +26,8 @@ use backend_azure::AzureBackend;
 use backend_gcs::GcsBackend;
 #[cfg(feature = "memcache")]
 use backend_memcache::MemcacheBackend;
+#[cfg(feature = "s3")]
+use backend_s3::S3Backend;
 #[cfg(feature = "valkey")]
 use backend_valkey::ValkeyBackend;
 use file_distribution::FileProvider;
@@ -133,6 +135,13 @@ async fn main() -> ExitCode {
     // Azure Blob Storage backends make no request until they are used.
     #[cfg(feature = "azure")]
     let registry = match registry.add_backends::<AzureBackend>(&cfg) {
+        Ok(registry) => registry,
+        Err(_) => return ExitCode::FAILURE,
+    };
+
+    // S3 backends make no request until they are used.
+    #[cfg(feature = "s3")]
+    let registry = match registry.add_backends::<S3Backend>(&cfg) {
         Ok(registry) => registry,
         Err(_) => return ExitCode::FAILURE,
     };

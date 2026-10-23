@@ -1,0 +1,24 @@
+[package]
+name = "backend-s3"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+app-config = { version = "0.1.0", path = "../app-config", features = ["s3"] }
+backend-object-store = { version = "0.1.0", path = "../backend-object-store" }
+backend-traits = { version = "0.1.0", path = "../backend-traits" }
+object_store = { version = "0.14.2", default-features = false, features = ["aws"] }
+thiserror = "2.0.21"
+
+[dev-dependencies]
+axum-extra = { version = "0.12.6", default-features = false, features = ["typed-header"] }
+backbone = { path = "../backbone" }
+file-distribution = { version = "0.1.0", path = "../file-distribution" }
+rendezvous = "0.4.0"
+reqwest = { version = "0.13.5", default-features = false }
+shortguid = "0.7.0"
+tokio = { version = "1.54.1", features = ["macros", "rt"] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
