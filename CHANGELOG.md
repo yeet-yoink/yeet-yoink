@@ -12,6 +12,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Memcached backends accept a `max_file_size_bytes` setting. Files above the limit are
   not sent to that backend; it defaults to just under Memcached's 1 MiB item limit
   ([#59](https://github.com/yeet-yoink/yeet-yoink/issues/59)).
+- Memcached backends accept a `priority` setting (default `0`). `/yoink` asks backends one at
+  a time, highest priority first, and stops at the first intact copy; distributions start in
+  the same order ([#56](https://github.com/yeet-yoink/yeet-yoink/issues/56)).
 
 ## [0.0.1] - 2023-06-25
 

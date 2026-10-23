@@ -12,6 +12,13 @@ pub trait DistributeFile: Send + Sync {
     /// Gets the tag of the backend.
     fn tag(&self) -> &str;
 
+    /// Gets the priority of the backend. Backends with a higher priority are
+    /// fetched from first and have their distributions started first; backends
+    /// with equal priority keep their registration order.
+    fn priority(&self) -> i32 {
+        0
+    }
+
     /// Gets the largest file size, in bytes, this backend accepts for distribution.
     ///
     /// Files larger than this are not handed to the backend. `None` means no limit.
@@ -116,4 +123,64 @@ pub enum DistributionError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Join(#[from] tokio::task::JoinError),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A backend that relies on every default method.
+    struct DefaultBackend;
+
+    #[async_trait]
+    impl DistributeFile for DefaultBackend {
+        fn tag(&self) -> &str {
+            "default"
+        }
+
+        async fn distribute_file(
+            &self,
+            _id: ShortGuid,
+            _summary: Arc<WriteSummary>,
+            _file_provider: FileProvider,
+        ) -> Result<(), DistributionError> {
+            Ok(())
+        }
+    }
+
+    /// A backend with a size limit of 10 bytes.
+    struct LimitedBackend;
+
+    #[async_trait]
+    impl DistributeFile for LimitedBackend {
+        fn tag(&self) -> &str {
+            "limited"
+        }
+
+        fn max_file_size(&self) -> Option<u64> {
+            Some(10)
+        }
+
+        async fn distribute_file(
+            &self,
+            _id: ShortGuid,
+            _summary: Arc<WriteSummary>,
+            _file_provider: FileProvider,
+        ) -> Result<(), DistributionError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn defaults_to_neutral_priority_and_no_size_limit() {
+        assert_eq!(DefaultBackend.priority(), 0);
+        assert_eq!(DefaultBackend.max_file_size(), None);
+        assert!(DefaultBackend.accepts_file_size(u64::MAX));
+    }
+
+    #[test]
+    fn size_limit_is_inclusive() {
+        assert!(LimitedBackend.accepts_file_size(10));
+        assert!(!LimitedBackend.accepts_file_size(11));
+    }
 }

@@ -34,10 +34,11 @@ impl BackendRegistry {
 
     fn new(
         cleanup_rendezvous: RendezvousGuard,
-        backends: Vec<Backend>,
+        mut backends: Vec<Backend>,
         file_accessor: FileProvider,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(EVENT_BUFFER_SIZE);
+        sort_by_priority(&mut backends);
         let backends = Arc::new(backends);
         let handle = tokio::spawn(Self::handle_events(
             backends.clone(),
@@ -78,11 +79,11 @@ impl BackendRegistry {
                 BackendCommand::DistributeFile(id, summary) => {
                     debug!(file_id = %id, "Handling distribution of file {id}", id = id);
 
-                    // Distribute to all backends that accept the file's size concurrently in a detached task so
-                    // that the event loop stays free to accept further commands. The
-                    // forked rendezvous guard keeps graceful shutdown waiting until
-                    // the distribution has finished.
-                    // TODO(#56-58): run backends in configured priority order.
+                    // Distribute to all backends that accept the file's size
+                    // concurrently in a detached task so that the event loop stays
+                    // free to accept further commands. Distributions start in
+                    // priority order. The forked rendezvous guard keeps graceful
+                    // shutdown waiting until the distribution has finished.
                     let backends = backends.clone();
                     let file_accessor = file_accessor.clone();
                     let guard = cleanup_rendezvous.fork();
@@ -131,6 +132,11 @@ impl BackendRegistry {
     }
 }
 
+/// Orders backends by descending priority, keeping registration order for ties.
+fn sort_by_priority(backends: &mut [Backend]) {
+    backends.sort_by_key(|backend| std::cmp::Reverse(backend.priority()));
+}
+
 /// Fetches files from the registered backends.
 #[derive(Clone)]
 pub struct BackendFetcher {
@@ -144,9 +150,8 @@ impl BackendFetcher {
 
     /// Fetches a file from the first backend that holds an intact, unexpired copy.
     ///
-    /// Backends are queried in registration order. Errors, expired and corrupt
+    /// Backends are queried in priority order. Errors, expired and corrupt
     /// copies are logged and skipped.
-    // TODO(#58): query backends in configured priority order.
     pub async fn fetch(&self, id: ShortGuid) -> Option<FetchedFile> {
         for backend in self.backends.iter() {
             match backend.fetch_file(id).await {
@@ -356,6 +361,92 @@ mod tests {
 
         assert_eq!(accepting_count(&[small.clone(), unlimited.clone()], 11), 1);
         assert_eq!(accepting_count(&[small, unlimited], 10), 2);
+    }
+
+    /// Wraps the backends and orders them as the registry does.
+    fn prioritized(backends: &[FakeBackend]) -> BackendFetcher {
+        let mut backends: Vec<Backend> = backends.iter().cloned().map(Backend::wrap).collect();
+        sort_by_priority(&mut backends);
+        BackendFetcher::new(Arc::new(backends))
+    }
+
+    #[tokio::test]
+    async fn fetch_prefers_higher_priority_backends() {
+        let low = FakeBackend::default().with_priority(-1);
+        let default = FakeBackend::default();
+        let high = FakeBackend::default().with_priority(10);
+        let id = ShortGuid::new_random();
+        for backend in [&low, &default, &high] {
+            backend.insert(id, fetched_file(b"abc"));
+        }
+
+        assert!(
+            prioritized(&[low.clone(), default.clone(), high.clone()])
+                .fetch(id)
+                .await
+                .is_some()
+        );
+        assert_eq!(
+            (high.fetches(), default.fetches(), low.fetches()),
+            (1, 0, 0)
+        );
+    }
+
+    #[tokio::test]
+    async fn registry_orders_backends_by_priority() {
+        use backbone::FileAccessorBridge;
+        use rendezvous::Rendezvous;
+
+        let low = FakeBackend::default();
+        let high = FakeBackend::default().with_priority(10);
+        let id = ShortGuid::new_random();
+        low.insert(id, fetched_file(b"abc"));
+        high.insert(id, fetched_file(b"abc"));
+
+        let rendezvous = Rendezvous::new();
+        let accessor = Arc::new(FileAccessorBridge::default());
+        let registry =
+            BackendRegistry::builder(rendezvous.fork_guard(), FileProvider::wrap(&accessor))
+                .add_backends_from_iter([low.clone(), high.clone()].map(Backend::wrap))
+                .build();
+        // Dropping a Rendezvous blocks until all guards complete.
+        std::mem::forget(rendezvous);
+
+        assert!(registry.fetcher().fetch(id).await.is_some());
+        assert_eq!((high.fetches(), low.fetches()), (1, 0));
+    }
+
+    #[tokio::test]
+    async fn fetch_falls_back_to_lower_priority_backends() {
+        let high = FakeBackend::default().with_priority(10);
+        let low = FakeBackend::default();
+        let id = ShortGuid::new_random();
+        low.insert(id, fetched_file(b"abc"));
+
+        assert!(
+            prioritized(&[low.clone(), high.clone()])
+                .fetch(id)
+                .await
+                .is_some()
+        );
+        assert_eq!((high.fetches(), low.fetches()), (1, 1));
+    }
+
+    #[tokio::test]
+    async fn equal_priorities_keep_registration_order() {
+        let first = FakeBackend::default();
+        let second = FakeBackend::default();
+        let id = ShortGuid::new_random();
+        first.insert(id, fetched_file(b"abc"));
+        second.insert(id, fetched_file(b"abc"));
+
+        assert!(
+            prioritized(&[first.clone(), second.clone()])
+                .fetch(id)
+                .await
+                .is_some()
+        );
+        assert_eq!((first.fetches(), second.fetches()), (1, 0));
     }
 
     #[tokio::test]

@@ -32,6 +32,8 @@ pub struct MemcacheBackend {
     expiration_secs: u32,
     /// The largest file size accepted for storage, or `None` for no limit.
     max_file_size: Option<u64>,
+    /// The priority of this backend relative to others.
+    priority: i32,
 }
 
 impl MemcacheBackend {
@@ -65,6 +67,7 @@ impl MemcacheBackend {
             pool,
             expiration_secs,
             max_file_size,
+            priority: config.priority,
         })
     }
 }
@@ -73,6 +76,10 @@ impl MemcacheBackend {
 impl DistributeFile for MemcacheBackend {
     fn tag(&self) -> &str {
         &self.tag
+    }
+
+    fn priority(&self) -> i32 {
+        self.priority
     }
 
     fn max_file_size(&self) -> Option<u64> {

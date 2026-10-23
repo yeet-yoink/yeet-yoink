@@ -7,3 +7,5 @@ backends:
       expiration_sec: 500
       # Largest file stored in this backend; keep below memcached's -I limit. 0 disables the check.
       max_file_size_bytes: 1047552
+      # Higher priorities are fetched from first; defaults to 0.
+      priority: 10

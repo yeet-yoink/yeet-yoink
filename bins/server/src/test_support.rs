@@ -17,6 +17,7 @@ pub struct FakeBackend {
     fetches: Arc<AtomicUsize>,
     failing: Arc<AtomicBool>,
     max_file_size: Option<u64>,
+    priority: i32,
 }
 
 impl FakeBackend {
@@ -33,6 +34,11 @@ impl FakeBackend {
             max_file_size: Some(max_file_size),
             ..Self::default()
         }
+    }
+
+    /// Sets the backend's priority.
+    pub fn with_priority(self, priority: i32) -> Self {
+        Self { priority, ..self }
     }
 
     pub fn insert(&self, id: ShortGuid, file: FetchedFile) {
@@ -52,6 +58,10 @@ impl FakeBackend {
 impl DistributeFile for FakeBackend {
     fn tag(&self) -> &str {
         "fake"
+    }
+
+    fn priority(&self) -> i32 {
+        self.priority
     }
 
     fn max_file_size(&self) -> Option<u64> {
