@@ -22,12 +22,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Files can be distributed to and fetched from Google Cloud Storage via `backends.gcs`
   (bucket, optional prefix, Application Default Credentials or a service account key).
   Cloud Storage has no per-object expiry: the expiry is checked on fetch, and a bucket
-  lifecycle rule should delete old objects. Fetched files are held in memory, so the size
+  lifecycle rule should delete old objects. Uploads are buffered in memory, so the size
   limit defaults to 64 MiB ([#13](https://github.com/yeet-yoink/yeet-yoink/issues/13)).
 
 ### Changed
 
 - The `backends.memcache` section is now optional, so Valkey-only configurations are valid.
+- Files fetched from Valkey and Google Cloud Storage are streamed into the local buffer and
+  checked against their hashes there, instead of being read into memory first. `/yoink`
+  always serves the verified local copy; with `cache.near_cache: false` that copy is dropped
+  once served ([#120](https://github.com/yeet-yoink/yeet-yoink/issues/120)).
 
 ## [0.0.1] - 2023-06-25
 

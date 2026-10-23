@@ -306,6 +306,7 @@ dependencies = [
  "base64 0.23.1",
  "bytes",
  "file-distribution",
+ "futures",
  "map-ok",
  "object_store",
  "rendezvous",
@@ -314,6 +315,7 @@ dependencies = [
  "shortguid",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 
@@ -364,12 +366,14 @@ dependencies = [
  "backend-traits",
  "bytes",
  "file-distribution",
+ "futures",
  "map-ok",
  "redis",
  "rendezvous",
  "shortguid",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 

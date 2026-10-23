@@ -7,8 +7,8 @@ use app_config::memcache::MemcacheBackendConfig;
 use axum_extra::headers::ContentType;
 use backbone::{Backbone, CompletionMode, FileAccessorBridge};
 use backend_memcache::MemcacheBackend;
-use backend_traits::{DistributeFile, FetchFile};
-use file_distribution::{FileProvider, WriteSummary};
+use backend_traits::{DistributeFile, FetchFile, FetchedFile};
+use file_distribution::{FileHashes, FileProvider, WriteSummary};
 use rendezvous::Rendezvous;
 use shortguid::ShortGuid;
 use std::sync::Arc;
@@ -40,6 +40,17 @@ fn backend(expiration_sec: Option<u32>) -> Option<MemcacheBackend> {
     Some(MemcacheBackend::try_new(&config).expect("Failed to connect to memcached"))
 }
 
+/// Reads the content of a fetched file, keeping its metadata.
+async fn read_content(mut file: FetchedFile) -> (FetchedFile, Vec<u8>) {
+    use tokio::io::AsyncReadExt;
+    let mut data = Vec::new();
+    file.content
+        .read_to_end(&mut data)
+        .await
+        .expect("Failed to read content");
+    (file, data)
+}
+
 /// Buffers a file in a backbone and returns a provider for it, as the server does.
 async fn buffered_file(id: ShortGuid, data: &[u8]) -> (FileProvider, Arc<WriteSummary>) {
     let (sender, receiver) = mpsc::channel(16);
@@ -65,7 +76,12 @@ async fn buffered_file(id: ShortGuid, data: &[u8]) -> (FileProvider, Arc<WriteSu
         )
         .await
         .expect("Failed to create file");
-    writer.write(data).await.expect("Failed to write");
+    // Writes may be partial; write until everything is buffered.
+    let mut remaining = data;
+    while !remaining.is_empty() {
+        let written = writer.write(remaining).await.expect("Failed to write");
+        remaining = &remaining[written..];
+    }
     writer.sync_data().await.expect("Failed to sync");
     let summary = writer
         .finalize(CompletionMode::NoSync)
@@ -96,13 +112,14 @@ async fn distributed_file_can_be_fetched() {
         .await
         .expect("Failed to fetch")
         .expect("File not found");
+    let (file, data) = read_content(file).await;
 
-    assert_eq!(file.data, &b"hello, memcached"[..]);
+    assert_eq!(data, &b"hello, memcached"[..]);
     assert_eq!(file.file_name.as_deref(), Some("hello.txt"));
     assert_eq!(file.content_type.as_deref(), Some("text/plain"));
     assert_eq!(file.hashes.md5, summary.hashes.md5);
     assert_eq!(file.hashes.sha256, summary.hashes.sha256);
-    assert!(file.is_intact());
+    assert_eq!(FileHashes::of(&data), file.hashes);
 
     let expires_at = file.expires_at.expect("Missing expiry");
     let remaining = expires_at
@@ -142,6 +159,7 @@ async fn zero_expiration_keeps_the_file_indefinitely() {
         .await
         .expect("Failed to fetch")
         .expect("File not found");
+    let (file, _) = read_content(file).await;
 
     assert_eq!(file.expires_at, None);
 }
@@ -198,9 +216,10 @@ async fn file_at_the_default_size_limit_fits() {
         .await
         .expect("Failed to fetch")
         .expect("File not found");
+    let (file, data) = read_content(file).await;
 
-    assert_eq!(file.data.len(), data.len());
-    assert!(file.is_intact());
+    assert_eq!(data.len(), data.len());
+    assert_eq!(FileHashes::of(&data), file.hashes);
 }
 
 #[tokio::test]

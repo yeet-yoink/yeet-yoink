@@ -10,6 +10,7 @@ use backend_traits::{
 use bytes::Bytes;
 use file_distribution::protobuf::ItemMetadata;
 use file_distribution::{FileProvider, GetFile, WriteSummary};
+use futures::{Stream, stream};
 use map_ok::{BoxOk, MapOk};
 use redis::aio::{ConnectionManager, ConnectionManagerConfig};
 use redis::{Client, RedisError};
@@ -17,10 +18,14 @@ use shortguid::ShortGuid;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::io::AsyncReadExt;
+use tokio_util::io::StreamReader;
 use tracing::trace;
 
 /// How long a single connection attempt may take.
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(1);
+
+/// The size of the ranges in which stored files are read back.
+const READ_CHUNK_SIZE: u64 = 1024 * 1024;
 
 /// How often a failed connection attempt is retried within one request.
 ///
@@ -145,22 +150,60 @@ impl DistributeFile for ValkeyBackend {
 impl FetchFile for ValkeyBackend {
     async fn fetch_file(&self, id: ShortGuid) -> Result<Option<FetchedFile>, FetchError> {
         let mut connection = self.connection.clone();
-        let (metadata, data): (Option<Vec<u8>>, Option<Vec<u8>>) = redis::cmd("MGET")
-            .arg(meta_key(id))
-            .arg(data_key(id))
+        let (metadata, exists, size): (Option<Vec<u8>>, bool, u64) = redis::pipe()
+            .get(meta_key(id))
+            .exists(data_key(id))
+            .strlen(data_key(id))
             .query_async(&mut connection)
             .await
             .map_err(|e: RedisError| FetchError::BackendSpecific(Box::new(e)))?;
 
-        let (Some(metadata), Some(data)) = (metadata, data) else {
+        let (Some(metadata), true) = (metadata, exists) else {
             trace!(file_id = %id, "File {id} not found in valkey");
             return Ok(None);
         };
 
-        let file = FetchedFile::from_stored(&metadata, Bytes::from(data))?;
-        trace!(file_id = %id, "Fetched file {id} from valkey");
+        // The content is read in ranges as it is consumed. Should the value
+        // change or vanish in between, the size and hash checks reject the copy.
+        let content = StreamReader::new(read_in_ranges(connection, data_key(id), size));
+        let file = FetchedFile::from_stored(&metadata, Some(size), Box::new(content))?;
+        trace!(file_id = %id, "Fetching file {id} of {size} bytes from valkey");
         Ok(Some(file))
     }
+}
+
+/// Reads a value in chunks of [`READ_CHUNK_SIZE`] bytes using `GETRANGE`.
+fn read_in_ranges(
+    connection: ConnectionManager,
+    key: String,
+    size: u64,
+) -> impl Stream<Item = std::io::Result<Bytes>> + Send + Unpin {
+    Box::pin(stream::try_unfold(
+        (connection, 0u64),
+        move |(mut connection, offset)| {
+            let key = key.clone();
+            async move {
+                if offset >= size {
+                    return Ok(None);
+                }
+                // GETRANGE takes an inclusive end offset.
+                let end = (offset + READ_CHUNK_SIZE).min(size) - 1;
+                let chunk: Vec<u8> = redis::cmd("GETRANGE")
+                    .arg(&key)
+                    .arg(offset)
+                    .arg(end)
+                    .query_async(&mut connection)
+                    .await
+                    .map_err(std::io::Error::other)?;
+                if chunk.is_empty() {
+                    // The value shrank or vanished; end the stream early.
+                    return Ok(None);
+                }
+                let next = offset + chunk.len() as u64;
+                Ok(Some((Bytes::from(chunk), (connection, next))))
+            }
+        },
+    ))
 }
 
 impl BackendInfo for ValkeyBackend {

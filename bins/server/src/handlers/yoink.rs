@@ -1,14 +1,13 @@
 //! Contains the `/yoink` endpoint filter.
 
 use crate::AppState;
-use crate::{expiration_as_rfc1123, system_time_as_rfc1123};
+use crate::expiration_as_rfc1123;
 use axum::Router;
 use axum::body::Body;
 use axum::extract::{Path, State};
 use axum::http::{HeaderName, StatusCode, header};
 use axum::response::{AppendHeaders, IntoResponse, Response};
 use axum::routing::get;
-use backend_traits::FetchedFile;
 use base64::Engine;
 use file_distribution::{BoxedFileReader, FileHashes, FileReaderTrait, GetFileReaderError};
 use metrics::transfer::{TransferMethod, TransferMetrics};
@@ -18,7 +17,6 @@ use shared_files::FileSize;
 use shortguid::ShortGuid;
 use std::borrow::Borrow;
 use tokio_util::io::ReaderStream;
-use tracing::warn;
 
 /// Escape control set for URL/hex-encoding file names in the Content-Disposition header.
 static ASCII_CONTROLS: AsciiSet = CONTROLS
@@ -65,24 +63,16 @@ async fn do_yoink(
         Err(e) => return Ok(map_file_reader_error_to_response(e)),
     };
 
-    // The file is not buffered locally (anymore); try the backends.
-    let Some(fetched) = state.backends.fetch(id).await else {
-        return Ok(map_file_reader_error_to_response(not_found));
-    };
-
-    if state.near_cache {
-        match state.backbone.cache_file(id, &fetched).await {
-            Ok(()) => match state.backbone.get_file(id).await {
-                Ok(file) => return Ok(local_file_response(id, file)),
-                Err(e) => warn!(file_id = %id, "Failed to read file {id} from the near cache: {e}"),
-            },
-            Err(e) => {
-                warn!(file_id = %id, "Failed to cache file {id} fetched from a backend: {e}")
-            }
-        }
+    // The file is not buffered locally (anymore); try the backends. The copy
+    // is buffered and verified before anything is sent.
+    match state
+        .backends
+        .fetch(id, &state.backbone, state.near_cache)
+        .await
+    {
+        Some(file) => Ok(local_file_response(id, file)),
+        None => Ok(map_file_reader_error_to_response(not_found)),
     }
-
-    Ok(fetched_file_response(id, fetched))
 }
 
 /// Streams a file buffered by the backbone.
@@ -131,32 +121,6 @@ fn local_file_response(id: ShortGuid, file: BoxedFileReader) -> Response {
 
     let headers = AppendHeaders(headers);
     (headers, body).into_response()
-}
-
-/// Serves a file fetched from a backend without buffering it locally.
-///
-/// `Expires` reflects the backend copy's expiry, if it has one. No `Age` is sent.
-fn fetched_file_response(id: ShortGuid, file: FetchedFile) -> Response {
-    TransferMetrics::track_transfer(TransferMethod::Fetch);
-    TransferMetrics::track_bytes_transferred(TransferMethod::Fetch, file.data.len());
-
-    let content_type = file.content_type.unwrap_or_default();
-
-    let mut headers = vec![(header::CONTENT_LENGTH, file.data.len().to_string())];
-    headers.extend(hash_headers(&file.hashes));
-    headers.push(content_disposition_from_optional_name(
-        id,
-        &content_type,
-        &file.file_name,
-    ));
-    if !content_type.is_empty() {
-        headers.push((header::CONTENT_TYPE, content_type));
-    }
-    if let Some(expires_at) = file.expires_at.and_then(system_time_as_rfc1123) {
-        headers.push((header::EXPIRES, expires_at));
-    }
-
-    (AppendHeaders(headers), Body::from(file.data)).into_response()
 }
 
 /// Generates the `ETag`, `Content-MD5` and hex-encoded hash headers.
@@ -316,10 +280,12 @@ mod tests {
 mod endpoint_tests {
     use super::*;
     use crate::backend_registry::BackendFetcher;
+    use crate::system_time_as_rfc1123;
+    use crate::test_support::FakeFile;
     use crate::test_support::{FakeBackend, fetched_file};
     use axum::http::Request;
     use backbone::{Backbone, CompletionMode};
-    use backend_traits::{Backend, FetchedFile};
+    use backend_traits::Backend;
     use bytes::Bytes;
     use rendezvous::Rendezvous;
     use std::sync::Arc;
@@ -435,7 +401,9 @@ mod endpoint_tests {
             headers.get("content-disposition"),
             Some("attachment; filename=\"fetched.txt\"")
         );
-        assert_eq!(headers.get("expires"), None);
+        // Served from the verified local copy, so freshness follows the local
+        // lease; the backend keeps its copy indefinitely.
+        assert!(headers.get("expires").is_some());
 
         // Without the near cache, every read goes to the backend.
         let (status, _, _) = yoink(&fixture.state, id).await;
@@ -457,7 +425,7 @@ mod endpoint_tests {
         let expires_at = UNIX_EPOCH + Duration::from_secs(now + 60);
         fixture.backend.insert(
             id,
-            FetchedFile {
+            FakeFile {
                 expires_at: Some(expires_at),
                 ..fetched_file(b"abc")
             },
@@ -501,7 +469,7 @@ mod endpoint_tests {
         let id = ShortGuid::new_random();
         fixture.backend.insert(
             id,
-            FetchedFile {
+            FakeFile {
                 data: Bytes::from_static(b"abd"),
                 ..fetched_file(b"abc")
             },

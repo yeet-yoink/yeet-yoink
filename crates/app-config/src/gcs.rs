@@ -8,8 +8,8 @@ pub const DEFAULT_EXPIRATION: Duration = Duration::from_secs(24 * 3600);
 
 /// The default largest file size accepted by a Google Cloud Storage backend, in bytes.
 ///
-/// Fetched files are held in memory, so this stays well below what Cloud
-/// Storage itself accepts.
+/// Uploads are buffered in memory, so this stays well below what Cloud Storage
+/// itself accepts. Fetches are streamed and need no such limit.
 pub const DEFAULT_MAX_FILE_SIZE_BYTES: u64 = 64 * 1024 * 1024;
 
 /// The Google Cloud Storage-specific configuration.

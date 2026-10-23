@@ -9,8 +9,8 @@ use app_config::gcs::GcsBackendConfig;
 use axum_extra::headers::ContentType;
 use backbone::{Backbone, CompletionMode, FileAccessorBridge};
 use backend_gcs::{GcsBackend, METADATA_ATTRIBUTE};
-use backend_traits::{DistributeFile, DistributionError, FetchError, FetchFile};
-use file_distribution::{FileProvider, WriteSummary};
+use backend_traits::{DistributeFile, DistributionError, FetchError, FetchFile, FetchedFile};
+use file_distribution::{FileHashes, FileProvider, WriteSummary};
 use object_store::memory::InMemory;
 use object_store::path::Path;
 use object_store::{Attribute, Attributes, ObjectStore, ObjectStoreExt, PutOptions, PutPayload};
@@ -66,6 +66,17 @@ async fn emulator(expiration_sec: Option<u32>) -> Option<GcsBackend> {
     Some(GcsBackend::try_new(&config).expect("Failed to create GCS backend"))
 }
 
+/// Reads the content of a fetched file, keeping its metadata.
+async fn read_content(mut file: FetchedFile) -> (FetchedFile, Vec<u8>) {
+    use tokio::io::AsyncReadExt;
+    let mut data = Vec::new();
+    file.content
+        .read_to_end(&mut data)
+        .await
+        .expect("Failed to read content");
+    (file, data)
+}
+
 /// Buffers a file in a backbone and returns a provider for it, as the server does.
 async fn buffered_file(id: ShortGuid, data: &[u8]) -> (FileProvider, Arc<WriteSummary>) {
     let (sender, receiver) = mpsc::channel(16);
@@ -91,7 +102,12 @@ async fn buffered_file(id: ShortGuid, data: &[u8]) -> (FileProvider, Arc<WriteSu
         )
         .await
         .expect("Failed to create file");
-    writer.write(data).await.expect("Failed to write");
+    // Writes may be partial; write until everything is buffered.
+    let mut remaining = data;
+    while !remaining.is_empty() {
+        let written = writer.write(remaining).await.expect("Failed to write");
+        remaining = &remaining[written..];
+    }
     writer.sync_data().await.expect("Failed to sync");
     let summary = writer
         .finalize(CompletionMode::NoSync)
@@ -119,13 +135,14 @@ async fn assert_round_trip(backend: &GcsBackend) {
         .await
         .expect("Failed to fetch")
         .expect("File not found");
+    let (file, data) = read_content(file).await;
 
-    assert_eq!(file.data, &b"hello, cloud storage"[..]);
+    assert_eq!(data, &b"hello, cloud storage"[..]);
     assert_eq!(file.file_name.as_deref(), Some("hello.txt"));
     assert_eq!(file.content_type.as_deref(), Some("text/plain"));
     assert_eq!(file.hashes.md5, summary.hashes.md5);
     assert_eq!(file.hashes.sha256, summary.hashes.sha256);
-    assert!(file.is_intact());
+    assert_eq!(FileHashes::of(&data), file.hashes);
 
     let expires_at = file.expires_at.expect("Missing expiry");
     let remaining = expires_at
@@ -210,6 +227,7 @@ async fn zero_expiration_keeps_the_file_indefinitely() {
         .await
         .expect("Failed to fetch")
         .expect("File not found");
+    let (file, _) = read_content(file).await;
     assert_eq!(file.expires_at, None);
 }
 

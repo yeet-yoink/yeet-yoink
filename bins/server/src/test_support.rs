@@ -3,17 +3,18 @@
 use async_trait::async_trait;
 use backend_traits::{DistributeFile, DistributionError, FetchError, FetchFile, FetchedFile};
 use bytes::Bytes;
-use file_distribution::hash::{HashMd5, HashSha256};
 use file_distribution::{FileHashes, FileProvider, WriteSummary};
 use shortguid::ShortGuid;
 use std::collections::HashMap;
+use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 /// A backend that serves files from memory and counts fetches.
 #[derive(Clone, Default)]
 pub struct FakeBackend {
-    files: Arc<Mutex<HashMap<ShortGuid, FetchedFile>>>,
+    files: Arc<Mutex<HashMap<ShortGuid, FakeFile>>>,
     fetches: Arc<AtomicUsize>,
     failing: Arc<AtomicBool>,
     max_file_size: Option<u64>,
@@ -41,7 +42,7 @@ impl FakeBackend {
         Self { priority, ..self }
     }
 
-    pub fn insert(&self, id: ShortGuid, file: FetchedFile) {
+    pub fn insert(&self, id: ShortGuid, file: FakeFile) {
         self.files.lock().unwrap().insert(id, file);
     }
 
@@ -85,20 +86,45 @@ impl FetchFile for FakeBackend {
         if self.failing.load(Ordering::SeqCst) {
             return Err(FetchError::InvalidMetadata("simulated failure".into()));
         }
-        Ok(self.files.lock().unwrap().get(&id).cloned())
+        Ok(self
+            .files
+            .lock()
+            .unwrap()
+            .get(&id)
+            .cloned()
+            .map(FakeFile::into_fetched))
     }
 }
 
-/// Creates a fetched file with matching hashes.
-pub fn fetched_file(data: &'static [u8]) -> FetchedFile {
-    let mut md5 = HashMd5::new();
-    md5.update(data);
-    let mut sha256 = HashSha256::new();
-    sha256.update(data);
-    FetchedFile {
+/// A file held by a [`FakeBackend`]; each fetch streams a fresh copy of it.
+#[derive(Clone)]
+pub struct FakeFile {
+    pub file_name: Option<String>,
+    pub content_type: Option<String>,
+    pub hashes: FileHashes,
+    pub data: Bytes,
+    pub expires_at: Option<SystemTime>,
+}
+
+impl FakeFile {
+    fn into_fetched(self) -> FetchedFile {
+        FetchedFile {
+            file_name: self.file_name,
+            content_type: self.content_type,
+            hashes: self.hashes,
+            size: Some(self.data.len() as u64),
+            content: Box::new(Cursor::new(self.data)),
+            expires_at: self.expires_at,
+        }
+    }
+}
+
+/// Creates a fake file with matching hashes.
+pub fn fetched_file(data: &'static [u8]) -> FakeFile {
+    FakeFile {
         file_name: Some("fetched.txt".into()),
         content_type: Some("text/plain".into()),
-        hashes: FileHashes::new(md5.finalize(), sha256.finalize()),
+        hashes: FileHashes::of(data),
         data: Bytes::from_static(data),
         expires_at: None,
     }

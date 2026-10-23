@@ -156,7 +156,7 @@ impl FetchFile for MemcacheBackend {
             return Ok(None);
         };
 
-        let file = FetchedFile::from_stored(&metadata, Bytes::from(data))?;
+        let file = FetchedFile::from_stored_bytes(&metadata, Bytes::from(data))?;
         trace!(file_id = %id, "Fetched file {id} from memcache");
         Ok(Some(file))
     }
