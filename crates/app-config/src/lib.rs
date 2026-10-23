@@ -216,7 +216,7 @@ mod tests {
         assert_eq!(gcs.prefix.as_deref(), Some("files"));
         assert_eq!(gcs.service_account_path, None);
         assert_eq!(gcs.expiration_sec, Some(86400));
-        assert_eq!(gcs.max_file_size_bytes, Some(64 * 1024 * 1024));
+        assert_eq!(gcs.max_file_size_bytes, None);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use app_config::{
     AppConfig,
-    gcs::{DEFAULT_EXPIRATION, DEFAULT_MAX_FILE_SIZE_BYTES, GcsBackendConfig},
+    gcs::{DEFAULT_EXPIRATION, GcsBackendConfig},
 };
 use async_trait::async_trait;
 use backend_traits::{
@@ -10,23 +10,38 @@ use backend_traits::{
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use file_distribution::protobuf::ItemMetadata;
-use file_distribution::{FileProvider, GetFile, WriteSummary};
+use file_distribution::{BoxedFileReader, FileProvider, GetFile, WriteSummary};
 use futures::TryStreamExt;
 use map_ok::{BoxOk, MapOk};
 use object_store::gcp::GoogleCloudStorageBuilder;
 use object_store::path::Path;
 use object_store::{
-    Attribute, Attributes, ClientOptions, ObjectStore, ObjectStoreExt, PutOptions, RetryConfig,
+    Attribute, Attributes, ClientOptions, ObjectStore, ObjectStoreExt, PutMultipartOptions,
+    PutOptions, RetryConfig, WriteMultipart,
 };
 use shortguid::ShortGuid;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::io::AsyncReadExt;
 use tokio_util::io::StreamReader;
-use tracing::trace;
+use tracing::{trace, warn};
 
 /// The custom object metadata key holding the serialized file metadata.
 pub const METADATA_ATTRIBUTE: &str = "yy-metadata";
+
+/// Files up to this size are uploaded in a single request; larger ones are
+/// streamed as multipart uploads.
+const MULTIPART_THRESHOLD: u64 = 8 * 1024 * 1024;
+
+/// The size of the parts of a multipart upload. Cloud Storage requires all
+/// parts but the last to be at least 5 MiB.
+const PART_SIZE: usize = 8 * 1024 * 1024;
+
+/// How many parts of a multipart upload may be in flight at once.
+const MAX_CONCURRENT_PARTS: usize = 2;
+
+/// The size of the chunks in which a file is read for upload.
+const READ_CHUNK_SIZE: usize = 64 * 1024;
 
 /// How long a single connection attempt may take.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
@@ -106,13 +121,8 @@ impl GcsBackend {
             .map_or(DEFAULT_EXPIRATION, |secs| Duration::from_secs(secs.into()))
             .as_secs();
 
-        // A limit of 0 disables the size check.
-        let max_file_size = Some(
-            config
-                .max_file_size_bytes
-                .unwrap_or(DEFAULT_MAX_FILE_SIZE_BYTES),
-        )
-        .filter(|&max| max != 0);
+        // There is no limit by default; a limit of 0 means none as well.
+        let max_file_size = config.max_file_size_bytes.filter(|&max| max != 0);
 
         let prefix = config
             .prefix
@@ -159,11 +169,7 @@ impl DistributeFile for GcsBackend {
         summary: Arc<WriteSummary>,
         file_provider: FileProvider,
     ) -> Result<(), DistributionError> {
-        // The backend registry skips files above max_file_size(), so the
-        // content can be buffered in memory for the upload.
-        let mut file = file_provider.get_file(id).await?;
-        let mut data = Vec::with_capacity(summary.file_size_bytes);
-        file.read_to_end(&mut data).await?;
+        let file = file_provider.get_file(id).await?;
 
         let expiration = self.expiration_secs;
         let expires_at =
@@ -184,9 +190,29 @@ impl DistributeFile for GcsBackend {
         }
 
         let path = self.object_path(id);
+        if summary.file_size_bytes as u64 <= MULTIPART_THRESHOLD {
+            self.upload_whole(&path, file, attributes).await?;
+        } else {
+            self.upload_in_parts(&path, file, attributes).await?;
+        }
+        trace!(file_id = %id, "Stored file {id} as object {path}");
+        Ok(())
+    }
+}
+
+impl GcsBackend {
+    /// Uploads a small file in a single request.
+    async fn upload_whole(
+        &self,
+        path: &Path,
+        mut file: BoxedFileReader,
+        attributes: Attributes,
+    ) -> Result<(), DistributionError> {
+        let mut data = Vec::new();
+        file.read_to_end(&mut data).await?;
         self.store
             .put_opts(
-                &path,
+                path,
                 data.into(),
                 PutOptions {
                     attributes,
@@ -195,8 +221,61 @@ impl DistributeFile for GcsBackend {
             )
             .await
             .map_err(|e| DistributionError::BackendSpecific(Box::new(e)))?;
-        trace!(file_id = %id, "Stored file {id} as object {path}");
         Ok(())
+    }
+
+    /// Streams a large file as a multipart upload, holding at most a few parts
+    /// in memory. A failed upload is aborted.
+    async fn upload_in_parts(
+        &self,
+        path: &Path,
+        mut file: BoxedFileReader,
+        attributes: Attributes,
+    ) -> Result<(), DistributionError> {
+        let upload = self
+            .store
+            .put_multipart_opts(
+                path,
+                PutMultipartOptions {
+                    attributes,
+                    ..PutMultipartOptions::default()
+                },
+            )
+            .await
+            .map_err(|e| DistributionError::BackendSpecific(Box::new(e)))?;
+        let mut writer = WriteMultipart::new_with_chunk_size(upload, PART_SIZE);
+
+        let mut chunk = vec![0; READ_CHUNK_SIZE];
+        let result: Result<(), UploadError> = async {
+            loop {
+                writer.wait_for_capacity(MAX_CONCURRENT_PARTS).await?;
+                let read = file.read(&mut chunk).await?;
+                if read == 0 {
+                    return Ok(());
+                }
+                writer.write(&chunk[..read]);
+            }
+        }
+        .await;
+
+        match result {
+            Ok(()) => {
+                writer
+                    .finish()
+                    .await
+                    .map_err(|e| DistributionError::BackendSpecific(Box::new(e)))?;
+                Ok(())
+            }
+            Err(e) => {
+                if let Err(abort_error) = writer.abort().await {
+                    warn!("Failed to abort the multipart upload of {path}: {abort_error}");
+                }
+                Err(match e {
+                    UploadError::Read(e) => DistributionError::Io(e),
+                    UploadError::Store(e) => DistributionError::BackendSpecific(Box::new(e)),
+                })
+            }
+        }
     }
 }
 
@@ -272,6 +351,15 @@ pub enum GcsBackendConstructionError {
     FailedToCreateClient(object_store::Error),
 }
 
+/// An error while streaming a multipart upload.
+#[derive(Debug, thiserror::Error)]
+enum UploadError {
+    #[error(transparent)]
+    Read(#[from] std::io::Error),
+    #[error(transparent)]
+    Store(#[from] object_store::Error),
+}
+
 #[derive(Debug, thiserror::Error)]
 enum GcsFetchError {
     #[error("Object of {size} bytes exceeds the limit of {max} bytes")]
@@ -317,7 +405,7 @@ mod tests {
     fn defaults_apply_without_configuration() {
         let backend = in_memory(None);
         assert_eq!(backend.expiration_secs, DEFAULT_EXPIRATION.as_secs());
-        assert_eq!(backend.max_file_size(), Some(DEFAULT_MAX_FILE_SIZE_BYTES));
+        assert_eq!(backend.max_file_size(), None);
         assert_eq!(backend.priority(), 0);
         assert_eq!(backend.tag(), "gcs");
     }

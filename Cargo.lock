@@ -312,6 +312,7 @@ dependencies = [
  "rendezvous",
  "reqwest 0.13.5",
  "serde_json",
+ "shared-files",
  "shortguid",
  "thiserror",
  "tokio",

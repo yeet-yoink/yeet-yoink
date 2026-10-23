@@ -11,6 +11,7 @@ use backbone::{Backbone, CompletionMode, FileAccessorBridge};
 use backend_gcs::{GcsBackend, METADATA_ATTRIBUTE};
 use backend_traits::{DistributeFile, DistributionError, FetchError, FetchFile, FetchedFile};
 use file_distribution::{FileHashes, FileProvider, WriteSummary};
+use futures::StreamExt;
 use object_store::memory::InMemory;
 use object_store::path::Path;
 use object_store::{Attribute, Attributes, ObjectStore, ObjectStoreExt, PutOptions, PutPayload};
@@ -316,4 +317,122 @@ async fn emulator_unknown_file_is_not_found() {
         .await
         .expect("Failed to fetch");
     assert!(file.is_none());
+}
+
+/// Files above the multipart threshold are uploaded in parts, keeping their
+/// metadata and content type.
+#[tokio::test]
+async fn large_file_is_uploaded_in_parts() {
+    let (backend, store) = in_memory(&config(Some(60)));
+    let id = ShortGuid::new_random();
+    let data: Vec<u8> = (0..10 * 1024 * 1024u32).map(|i| (i % 251) as u8).collect();
+    let (provider, summary) = buffered_file(id, &data).await;
+
+    backend
+        .distribute_file(id, summary.clone(), provider)
+        .await
+        .expect("Failed to distribute");
+
+    let object = store
+        .get(&Path::from(format!("files/{id}")))
+        .await
+        .expect("Object not stored");
+    assert_eq!(object.meta.size, data.len() as u64);
+    assert_eq!(
+        object
+            .attributes
+            .get(&Attribute::ContentType)
+            .map(AsRef::as_ref),
+        Some("text/plain")
+    );
+
+    let file = backend
+        .fetch_file(id)
+        .await
+        .expect("Failed to fetch")
+        .expect("File not found");
+    let (file, fetched) = read_content(file).await;
+    assert!(fetched == data, "Content differs");
+    assert_eq!(file.hashes, summary.hashes);
+    assert_eq!(file.file_name.as_deref(), Some("hello.txt"));
+
+    // Only the completed object exists; no stray parts are left behind.
+    let objects: Vec<_> = store.list(None).collect::<Vec<_>>().await;
+    assert_eq!(objects.len(), 1);
+}
+
+/// A local file that breaks off after a number of bytes.
+struct BrokenFile {
+    remaining: usize,
+}
+
+impl tokio::io::AsyncRead for BrokenFile {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        if self.remaining == 0 {
+            return std::task::Poll::Ready(Err(std::io::ErrorKind::UnexpectedEof.into()));
+        }
+        let count = buf.remaining().min(self.remaining);
+        buf.put_slice(&vec![b'x'; count]);
+        self.remaining -= count;
+        std::task::Poll::Ready(Ok(()))
+    }
+}
+
+impl file_distribution::FileReaderTrait for BrokenFile {
+    fn summary(&self) -> &Option<Arc<WriteSummary>> {
+        &None
+    }
+    fn expiration_date(&self) -> tokio::time::Instant {
+        tokio::time::Instant::now()
+    }
+    fn file_size(&self) -> shared_files::FileSize {
+        shared_files::FileSize::AtLeast(0)
+    }
+    fn file_age(&self) -> Duration {
+        Duration::ZERO
+    }
+    fn content_type(&self) -> Option<std::borrow::Cow<'_, str>> {
+        None
+    }
+}
+
+/// Provides a file that breaks off after 9 MiB.
+struct BrokenProvider;
+
+#[async_trait::async_trait]
+impl file_distribution::GetFile for BrokenProvider {
+    async fn get_file(
+        &self,
+        _id: ShortGuid,
+    ) -> Result<file_distribution::BoxedFileReader, file_distribution::FileAccessorError> {
+        Ok(file_distribution::BoxedFileReader::new(BrokenFile {
+            remaining: 9 * 1024 * 1024,
+        }))
+    }
+}
+
+/// A multipart upload that fails partway is aborted and leaves no object.
+#[tokio::test]
+async fn failed_multipart_upload_is_aborted() {
+    let (backend, store) = in_memory(&config(Some(60)));
+    let id = ShortGuid::new_random();
+    let summary = Arc::new(WriteSummary {
+        expires: tokio::time::Instant::now() + Duration::from_secs(60),
+        hashes: FileHashes::of(b""),
+        file_name: None,
+        content_type: None,
+        file_size_bytes: 10 * 1024 * 1024,
+    });
+
+    let result = backend
+        .distribute_file(id, summary, FileProvider::wrap(Arc::new(BrokenProvider)))
+        .await;
+
+    assert!(matches!(result, Err(DistributionError::Io(_))));
+    let objects: Vec<_> = store.list(None).collect::<Vec<_>>().await;
+    assert!(objects.is_empty(), "Left behind: {objects:?}");
 }

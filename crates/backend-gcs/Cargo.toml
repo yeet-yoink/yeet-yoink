@@ -25,6 +25,7 @@ axum-extra = { version = "0.12.6", default-features = false, features = ["typed-
 backbone = { path = "../backbone" }
 rendezvous = "0.4.0"
 reqwest = { version = "0.13.5", default-features = false }
+shared-files = "0.5.0"
 tokio = { version = "1.54.1", features = ["macros", "rt"] }
 
 [package.metadata.docs.rs]
