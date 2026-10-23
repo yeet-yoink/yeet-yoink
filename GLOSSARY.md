@@ -31,6 +31,18 @@ _Avoid_: Node, server, pod
 Another yeyo in the same cluster that may hold a file locally.
 _Avoid_: Neighbor, replica
 
+**Cluster**:
+The yeyos that gossip with each other because they share a cluster ID and secret, possibly across Kubernetes namespaces.
+_Avoid_: Mesh, ring, group
+
+**Seed**:
+A `host:port` a yeyo contacts first to join the cluster; usually the headless service of a namespace, which stands for all of its pods.
+_Avoid_: Bootstrap node, contact point
+
+**Gossip**:
+The periodic exchange of state between yeyos through which every member learns of all others.
+_Avoid_: Heartbeat, broadcast
+
 ### Local buffering
 
 **Buffered file**:

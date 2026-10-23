@@ -29,3 +29,13 @@ backends:
       expiration_sec: 86400
       # Optional; files are streamed in both directions, so there is no limit by default.
       # max_file_size_bytes: 1073741824
+
+# Optional: find and gossip with other instances, see deploy/kubernetes/cluster.yaml.
+# Settings can be overridden by environment variables such as YY_CLUSTER__ADVERTISE_IP.
+# cluster:
+#   cluster_id: "yeet-yoink"
+#   listen_addr: "0.0.0.0:7946"
+#   advertise_ip: "10.0.0.12"
+#   seeds:
+#     - "yeet-yoink-gossip.my-namespace.svc.cluster.local:7946"
+#   secret_file: "/etc/yeet-yoink/gossip/secret"

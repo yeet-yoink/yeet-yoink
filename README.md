@@ -88,6 +88,18 @@ sequenceDiagram
 
 * `/stop` - Initiates a graceful shutdown.
 
+## Clustering
+
+Instances can find each other, within and across Kubernetes namespaces, by
+gossiping over UDP (see [ADR 0001](docs/adr/0001-chitchat-gossip-with-authenticated-transport.md)).
+Gossip is encrypted and authenticated with a shared secret; instances without it are ignored.
+
+* Seeds are `host:port` pairs; the headless service of a namespace stands for all of its pods,
+  and its fully qualified name, e.g. `yeet-yoink-gossip.other-namespace.svc.cluster.local:7946`,
+  reaches other namespaces. One reachable seed suffices.
+* [`deploy/kubernetes/cluster.yaml`](deploy/kubernetes/cluster.yaml) shows a complete setup,
+  including the Downward API variables for the pod IP and name and a NetworkPolicy.
+
 ## Example run
 
 ```shell

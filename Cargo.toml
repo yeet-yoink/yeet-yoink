@@ -5,3 +5,35 @@ members =[
     "crates/*"
 ]
 resolver = "3"
+
+# Hashing is far slower unoptimized, which makes debug builds and tests crawl
+# over large files. Optimize the hash and cipher crates in dev builds; our own
+# code stays debuggable. Generic code (e.g. AES-GCM over AES-256) is compiled
+# in the crate that uses it, so gossip encryption in `cluster` gains little;
+# its traffic is small enough not to matter.
+[profile.dev.package.aes]
+opt-level = 3
+[profile.dev.package.aes-gcm]
+opt-level = 3
+[profile.dev.package.ctr]
+opt-level = 3
+[profile.dev.package.ghash]
+opt-level = 3
+[profile.dev.package.polyval]
+opt-level = 3
+[profile.dev.package.cipher]
+opt-level = 3
+[profile.dev.package.universal-hash]
+opt-level = 3
+[profile.dev.package.hkdf]
+opt-level = 3
+[profile.dev.package.hmac]
+opt-level = 3
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.md5]
+opt-level = 3
+[profile.dev.package.digest]
+opt-level = 3
+[profile.dev.package.block-buffer]
+opt-level = 3

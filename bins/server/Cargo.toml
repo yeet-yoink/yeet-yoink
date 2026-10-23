@@ -25,6 +25,7 @@ backbone = { version = "0.1.0", path = "../../crates/backbone" }
 backend-gcs = { version = "0.1.0", path = "../../crates/backend-gcs", optional = true }
 backend-memcache = { version = "0.1.0", path = "../../crates/backend-memcache", optional = true }
 backend-traits = { version = "0.1.0", path = "../../crates/backend-traits" }
+cluster = { version = "0.1.0", path = "../../crates/cluster" }
 backend-valkey = { version = "0.1.0", path = "../../crates/backend-valkey", optional = true }
 base64 = "0.23.1"
 bytes = "1.12.1"

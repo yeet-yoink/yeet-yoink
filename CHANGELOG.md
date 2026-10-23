@@ -24,6 +24,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Cloud Storage has no per-object expiry: the expiry is checked on fetch, and a bucket
   lifecycle rule should delete old objects
   ([#13](https://github.com/yeet-yoink/yeet-yoink/issues/13)).
+- Instances find each other through a `cluster` section, within and across Kubernetes
+  namespaces: seeds name headless services, gossip runs over UDP, encrypted and authenticated
+  with a shared secret (AES-256-GCM, key derived with HKDF-SHA256). Settings can be overridden
+  by `YY_`-prefixed environment variables, e.g. from the Downward API. See
+  `deploy/kubernetes/cluster.yaml` ([#9](https://github.com/yeet-yoink/yeet-yoink/issues/9)).
 
 ### Changed
 

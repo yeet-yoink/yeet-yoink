@@ -29,6 +29,7 @@ use backend_valkey::ValkeyBackend;
 use file_distribution::FileProvider;
 
 mod backend_registry;
+mod cluster;
 mod commands;
 mod handlers;
 mod health;
@@ -68,6 +69,27 @@ async fn main() -> ExitCode {
         Err(_) => {
             return ExitCode::FAILURE;
         }
+    };
+
+    // Join the cluster of instances, announcing the first HTTP socket.
+    let http_port = matches
+        .get_many::<SocketAddr>("bind_http")
+        .into_iter()
+        .flatten()
+        .next()
+        .map(SocketAddr::port);
+    let cluster = match &cfg.cluster {
+        Some(config) => match cluster::join(config, http_port).await {
+            Ok(cluster) => {
+                cluster::log_membership_changes(&cluster).await;
+                Some(cluster)
+            }
+            Err(e) => {
+                error!("Failed to join the cluster: {e:#}");
+                return ExitCode::FAILURE;
+            }
+        },
+        None => None,
     };
 
     // Provide a signal that can be used to shut down the server.
@@ -128,6 +150,12 @@ async fn main() -> ExitCode {
 
     // If all servers are shut down, ensure the news is broadcast as well.
     stop_all_servers(shutdown_tx);
+
+    if let Some(cluster) = cluster
+        && let Err(e) = cluster.leave().await
+    {
+        warn!("Failed to leave the cluster: {e:#}");
+    }
 
     // TODO: Ensure registry is dropped, backbone is halted, ...
     shut_down_backbone(backbone);
