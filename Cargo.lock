@@ -340,25 +340,18 @@ name = "backend-gcs"
 version = "0.1.0"
 dependencies = [
  "app-config",
- "async-trait",
  "axum-extra",
  "backbone",
+ "backend-object-store",
  "backend-traits",
- "base64 0.23.1",
- "bytes",
  "file-distribution",
- "futures",
- "map-ok",
  "object_store",
  "rendezvous",
  "reqwest 0.13.5",
  "serde_json",
- "shared-files",
  "shortguid",
  "thiserror",
  "tokio",
- "tokio-util",
- "tracing",
 ]
 
 [[package]]
@@ -377,6 +370,27 @@ dependencies = [
  "r2d2-memcache",
  "rendezvous",
  "serde",
+ "shortguid",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "backend-object-store"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum-extra",
+ "backbone",
+ "backend-traits",
+ "base64 0.23.1",
+ "file-distribution",
+ "futures",
+ "object_store",
+ "rendezvous",
+ "shared-files",
  "shortguid",
  "thiserror",
  "tokio",

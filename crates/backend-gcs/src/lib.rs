@@ -4,4 +4,4 @@
 
 mod backend;
 
-pub use backend::{GcsBackend, GcsBackendConstructionError, METADATA_ATTRIBUTE};
+pub use backend::{GcsBackend, GcsBackendConstructionError};
