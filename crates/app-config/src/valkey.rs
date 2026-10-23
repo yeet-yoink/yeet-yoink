@@ -206,6 +206,18 @@ mod tests {
     }
 
     #[test]
+    fn serialization_keeps_the_full_connection_string() {
+        let conn_str: ValkeyConnectionString = "valkey://user:secret@127.0.0.1:6379/0"
+            .parse()
+            .expect("Failed to parse");
+
+        let yaml = serde_yaml::to_string(&conn_str).expect("Failed to serialize");
+        let round_trip: ValkeyConnectionString =
+            serde_yaml::from_str(&yaml).expect("Failed to deserialize");
+        assert_eq!(round_trip, conn_str);
+    }
+
+    #[test]
     fn password_is_masked_when_displayed() {
         let conn_str: ValkeyConnectionString = "valkey://user:secret@127.0.0.1:6379/0"
             .parse()

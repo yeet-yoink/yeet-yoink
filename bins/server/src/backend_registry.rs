@@ -420,6 +420,42 @@ mod tests {
         assert_eq!((high.fetches(), low.fetches()), (1, 0));
     }
 
+    /// A backend type whose construction always fails.
+    struct BrokenBackend;
+
+    impl backend_traits::BackendInfo for BrokenBackend {
+        fn backend_name() -> &'static str {
+            "Broken"
+        }
+    }
+
+    impl TryCreateFromConfig for BrokenBackend {
+        type Error = std::io::Error;
+
+        fn try_from_config(_config: &AppConfig) -> Result<Vec<Backend>, Self::Error> {
+            Err(std::io::Error::other("simulated failure"))
+        }
+    }
+
+    #[tokio::test]
+    async fn failing_backend_construction_is_reported() {
+        use backbone::FileAccessorBridge;
+        use rendezvous::Rendezvous;
+
+        let rendezvous = Rendezvous::new();
+        let accessor = Arc::new(FileAccessorBridge::default());
+        let result =
+            BackendRegistry::builder(rendezvous.fork_guard(), FileProvider::wrap(&accessor))
+                .add_backends::<BrokenBackend>(&AppConfig::default());
+        // Dropping a Rendezvous blocks until all guards complete.
+        std::mem::forget(rendezvous);
+
+        assert!(matches!(
+            result,
+            Err(RegisterBackendError::TryCreateFromConfig(_))
+        ));
+    }
+
     #[tokio::test]
     async fn fetch_falls_back_to_lower_priority_backends() {
         let high = FakeBackend::default().with_priority(10);
