@@ -29,6 +29,7 @@ fn backend(expiration_sec: Option<u32>) -> Option<MemcacheBackend> {
             .parse()
             .expect("Invalid memcache connection string"),
         expiration_sec,
+        max_file_size_bytes: None,
     };
     Some(MemcacheBackend::try_new(&config).expect("Failed to connect to memcached"))
 }
@@ -166,4 +167,32 @@ async fn poisoned_expiry_is_rejected() {
 
     let result = backend.fetch_file(id).await;
     assert!(matches!(result, Err(FetchError::InvalidMetadata(_))));
+}
+
+/// Assumes the test instance runs with Memcached's default item size limit.
+#[tokio::test]
+async fn file_at_the_default_size_limit_fits() {
+    use app_config::memcache::DEFAULT_MAX_FILE_SIZE_BYTES;
+
+    let Some(backend) = backend(Some(60)) else {
+        return;
+    };
+    assert_eq!(backend.max_file_size(), Some(DEFAULT_MAX_FILE_SIZE_BYTES));
+
+    let id = ShortGuid::new_random();
+    let data = vec![b'x'; DEFAULT_MAX_FILE_SIZE_BYTES as usize];
+    let (provider, summary) = buffered_file(id, &data).await;
+
+    backend
+        .distribute_file(id, summary, provider)
+        .await
+        .expect("Failed to distribute");
+    let file = backend
+        .fetch_file(id)
+        .await
+        .expect("Failed to fetch")
+        .expect("File not found");
+
+    assert_eq!(file.data.len(), data.len());
+    assert!(file.is_intact());
 }

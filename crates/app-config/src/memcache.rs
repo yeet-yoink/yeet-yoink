@@ -7,6 +7,13 @@ use url::Url;
 /// The default expiration time for Memcached entries.
 pub const DEFAULT_EXPIRATION: Duration = Duration::from_secs(3600);
 
+/// The default largest file size accepted by a Memcached backend, in bytes.
+///
+/// Memcached's default item size limit is 1 MiB (`-I 1m`), and that limit
+/// includes the key and per-item overhead, so a value of exactly 1 MiB is
+/// rejected. This leaves 1 KiB of headroom below it.
+pub const DEFAULT_MAX_FILE_SIZE_BYTES: u64 = 1024 * 1024 - 1024;
+
 /// The Memcached-specific configuration.
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct MemcacheBackendConfig {
@@ -30,6 +37,21 @@ pub struct MemcacheBackendConfig {
     /// 300
     /// ```
     pub expiration_sec: Option<u32>,
+    /// The largest file size, in bytes, to store in this backend. Larger files
+    /// are not distributed to it. Use `0` to disable the limit. Defaults to
+    /// [`DEFAULT_MAX_FILE_SIZE_BYTES`].
+    ///
+    /// Raise this together with Memcached's item size limit (`-I`), keeping it
+    /// slightly below that limit to leave room for the key and item overhead.
+    ///
+    /// ### Example
+    ///
+    /// To accept files just under 8 MiB on a server started with `-I 8m`:
+    ///
+    /// ```text
+    /// 8387584
+    /// ```
+    pub max_file_size_bytes: Option<u64>,
 }
 
 /// A Memcached connection string.
@@ -130,6 +152,20 @@ mod tests {
             "memcache://127.0.0.1:12345?timeout=10&tcp_nodelay=true"
         );
         assert_eq!(config.expiration_sec, Some(500));
+        assert_eq!(config.max_file_size_bytes, None);
+    }
+
+    #[test]
+    fn deserialize_memcache_config_reads_max_file_size() {
+        let yaml = r#"
+            tag: memcache-1
+            connection_string: "memcache://127.0.0.1:12345"
+            max_file_size_bytes: 8387584
+        "#;
+
+        let config: MemcacheBackendConfig =
+            serde_yaml::from_str(yaml).expect("Failed to deserialize Memcache config");
+        assert_eq!(config.max_file_size_bytes, Some(8 * 1024 * 1024 - 1024));
     }
 
     #[test]

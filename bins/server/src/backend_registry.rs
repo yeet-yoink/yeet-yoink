@@ -78,7 +78,7 @@ impl BackendRegistry {
                 BackendCommand::DistributeFile(id, summary) => {
                     debug!(file_id = %id, "Handling distribution of file {id}", id = id);
 
-                    // Distribute to all backends concurrently in a detached task so
+                    // Distribute to all backends that accept the file's size concurrently in a detached task so
                     // that the event loop stays free to accept further commands. The
                     // forked rendezvous guard keeps graceful shutdown waiting until
                     // the distribution has finished.
@@ -87,7 +87,8 @@ impl BackendRegistry {
                     let file_accessor = file_accessor.clone();
                     let guard = cleanup_rendezvous.fork();
                     tokio::spawn(async move {
-                        let distributions = backends.iter().map(|backend| {
+                        let file_size = summary.file_size_bytes as u64;
+                        let distributions = Self::accepting_backends(&backends, id, file_size).map(|backend| {
                             let file_accessor = file_accessor.clone();
                             let summary = summary.clone();
                             async move {
@@ -107,6 +108,26 @@ impl BackendRegistry {
 
         debug!("Closing backend event loop");
         cleanup_rendezvous.completed();
+    }
+
+    /// Selects the backends whose size limit admits a file of the given size.
+    fn accepting_backends(
+        backends: &[Backend],
+        id: ShortGuid,
+        file_size: u64,
+    ) -> impl Iterator<Item = &Backend> {
+        backends.iter().filter(move |backend| {
+            let accepted = backend.accepts_file_size(file_size);
+            if !accepted {
+                debug!(
+                    file_id = %id,
+                    "Skipping backend {tag}: file size {file_size} exceeds its limit of {max} bytes",
+                    tag = backend.tag(),
+                    max = backend.max_file_size().unwrap_or_default()
+                );
+            }
+            accepted
+        })
     }
 }
 
@@ -321,6 +342,20 @@ mod tests {
 
         assert!(fetcher(&[first, second.clone()]).fetch(id).await.is_some());
         assert_eq!(second.fetches(), 0);
+    }
+
+    fn accepting_count(backends: &[FakeBackend], file_size: u64) -> usize {
+        let backends: Vec<Backend> = backends.iter().cloned().map(Backend::wrap).collect();
+        BackendRegistry::accepting_backends(&backends, ShortGuid::new_random(), file_size).count()
+    }
+
+    #[test]
+    fn distribution_skips_backends_below_the_file_size() {
+        let small = FakeBackend::with_max_file_size(10);
+        let unlimited = FakeBackend::default();
+
+        assert_eq!(accepting_count(&[small.clone(), unlimited.clone()], 11), 1);
+        assert_eq!(accepting_count(&[small, unlimited], 10), 2);
     }
 
     #[tokio::test]

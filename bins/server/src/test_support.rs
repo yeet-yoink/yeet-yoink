@@ -16,6 +16,7 @@ pub struct FakeBackend {
     files: Arc<Mutex<HashMap<ShortGuid, FetchedFile>>>,
     fetches: Arc<AtomicUsize>,
     failing: Arc<AtomicBool>,
+    max_file_size: Option<u64>,
 }
 
 impl FakeBackend {
@@ -24,6 +25,14 @@ impl FakeBackend {
         let backend = Self::default();
         backend.failing.store(true, Ordering::SeqCst);
         backend
+    }
+
+    /// A backend that accepts files up to the given size for distribution.
+    pub fn with_max_file_size(max_file_size: u64) -> Self {
+        Self {
+            max_file_size: Some(max_file_size),
+            ..Self::default()
+        }
     }
 
     pub fn insert(&self, id: ShortGuid, file: FetchedFile) {
@@ -43,6 +52,10 @@ impl FakeBackend {
 impl DistributeFile for FakeBackend {
     fn tag(&self) -> &str {
         "fake"
+    }
+
+    fn max_file_size(&self) -> Option<u64> {
+        self.max_file_size
     }
 
     async fn distribute_file(

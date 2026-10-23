@@ -12,6 +12,18 @@ pub trait DistributeFile: Send + Sync {
     /// Gets the tag of the backend.
     fn tag(&self) -> &str;
 
+    /// Gets the largest file size, in bytes, this backend accepts for distribution.
+    ///
+    /// Files larger than this are not handed to the backend. `None` means no limit.
+    fn max_file_size(&self) -> Option<u64> {
+        None
+    }
+
+    /// Indicates whether this backend accepts a file of the given size for distribution.
+    fn accepts_file_size(&self, size_bytes: u64) -> bool {
+        self.max_file_size().is_none_or(|max| size_bytes <= max)
+    }
+
     /// Handles a file that is ready for distribution.
     async fn distribute_file(
         &self,
