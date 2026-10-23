@@ -20,6 +20,8 @@ use tokio::sync::broadcast;
 use tracing::{debug, error, info, warn};
 
 use crate::backend_registry::{BackendFetcher, BackendRegistry};
+#[cfg(feature = "gcs")]
+use backend_gcs::GcsBackend;
 #[cfg(feature = "memcache")]
 use backend_memcache::MemcacheBackend;
 #[cfg(feature = "valkey")]
@@ -93,6 +95,13 @@ async fn main() -> ExitCode {
     // Valkey backends connect lazily on first use and reconnect on failure.
     #[cfg(feature = "valkey")]
     let registry = match registry.add_backends::<ValkeyBackend>(&cfg) {
+        Ok(registry) => registry,
+        Err(_) => return ExitCode::FAILURE,
+    };
+
+    // Cloud Storage backends make no request until they are used.
+    #[cfg(feature = "gcs")]
+    let registry = match registry.add_backends::<GcsBackend>(&cfg) {
         Ok(registry) => registry,
         Err(_) => return ExitCode::FAILURE,
     };

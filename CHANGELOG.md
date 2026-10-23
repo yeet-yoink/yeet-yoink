@@ -19,6 +19,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with the same `expiration_sec`, `max_file_size_bytes` and `priority` settings as Memcached.
   Valkey backends connect on first use and reconnect on their own
   ([#12](https://github.com/yeet-yoink/yeet-yoink/issues/12)).
+- Files can be distributed to and fetched from Google Cloud Storage via `backends.gcs`
+  (bucket, optional prefix, Application Default Credentials or a service account key).
+  Cloud Storage has no per-object expiry: the expiry is checked on fetch, and a bucket
+  lifecycle rule should delete old objects. Fetched files are held in memory, so the size
+  limit defaults to 64 MiB ([#13](https://github.com/yeet-yoink/yeet-yoink/issues/13)).
 
 ### Changed
 

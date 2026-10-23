@@ -16,3 +16,16 @@ backends:
       expiration_sec: 3600
       # Valkey accepts values up to 512 MiB by default; fetched files are held in memory.
       max_file_size_bytes: 67108864
+      # Prefer the fast cache over slower backends.
+      priority: 10
+  gcs:
+    - tag: "gcs-1"
+      bucket: "my-yeet-yoink-bucket"
+      prefix: "files"
+      # Without a key file, Application Default Credentials are used.
+      # service_account_path: "/etc/yeet-yoink/service-account.json"
+      # Cloud Storage has no per-object expiry: the expiry is checked on fetch,
+      # and a bucket lifecycle rule should delete old objects.
+      expiration_sec: 86400
+      # Fetched files are held in memory.
+      max_file_size_bytes: 67108864
