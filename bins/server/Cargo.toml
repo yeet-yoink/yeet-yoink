@@ -11,7 +11,8 @@ edition = "2024"
 rust-version = "1.95.0"
 
 [features]
-default = ["memcache", "valkey"]
+default = ["memcache", "valkey", "gcs"]
+gcs = ["dep:backend-gcs", "app-config/gcs"]
 memcache = ["dep:backend-memcache", "app-config/memcache"]
 valkey = ["dep:backend-valkey", "app-config/valkey"]
 
@@ -21,6 +22,7 @@ app-config = { version = "0.1", path = "../../crates/app-config" }
 axum = { version = "0.8.9", features = ["http2", "macros", "json"] }
 axum-extra = { version = "0.12.6", features = ["typed-header"] }
 backbone = { version = "0.1.0", path = "../../crates/backbone" }
+backend-gcs = { version = "0.1.0", path = "../../crates/backend-gcs", optional = true }
 backend-memcache = { version = "0.1.0", path = "../../crates/backend-memcache", optional = true }
 backend-traits = { version = "0.1.0", path = "../../crates/backend-traits" }
 backend-valkey = { version = "0.1.0", path = "../../crates/backend-valkey", optional = true }

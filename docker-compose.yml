@@ -10,6 +10,14 @@ services:
       interval: 10s
       retries: 60
 
+  # Cloud Storage emulator. The fork supports the XML API uploads that
+  # object_store uses; see fsouza/fake-gcs-server#1164.
+  fake-gcs:
+    image: "tustvold/fake-gcs-server"
+    command: ["-scheme", "http", "-backend", "memory", "-public-host", "localhost:4443"]
+    ports:
+      - "4443:4443"
+
   memcached:
     image: "memcached:alpine"
     entrypoint:

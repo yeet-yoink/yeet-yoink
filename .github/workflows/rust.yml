@@ -54,11 +54,16 @@ jobs:
       - name: Build
         run: cargo build --workspace --verbose
       - uses: taiki-e/install-action@nextest
+      - name: Start Cloud Storage emulator
+        # Service containers cannot take arguments. The fork supports the XML
+        # API uploads object_store uses; see fsouza/fake-gcs-server#1164.
+        run: docker run -d -p 4443:4443 tustvold/fake-gcs-server -scheme http -backend memory -public-host localhost:4443
       - name: Run tests
         run: cargo nextest run --workspace --verbose --all-features
         env:
           YY_TEST_MEMCACHE: memcache://127.0.0.1:11211
           YY_TEST_VALKEY: valkey://127.0.0.1:6379
+          YY_TEST_GCS: http://localhost:4443
       # - name: Run doctests
       #   run: cargo test --doc --verbose --all-features
 
@@ -89,11 +94,16 @@ jobs:
       - name: Install nextest
         uses: taiki-e/install-action@nextest
       - uses: actions/checkout@v4
+      - name: Start Cloud Storage emulator
+        # Service containers cannot take arguments. The fork supports the XML
+        # API uploads object_store uses; see fsouza/fake-gcs-server#1164.
+        run: docker run -d -p 4443:4443 tustvold/fake-gcs-server -scheme http -backend memory -public-host localhost:4443
       - name: Generate code coverage
         run: cargo llvm-cov nextest --all-features --workspace --lcov --output-path lcov.info
         env:
           YY_TEST_MEMCACHE: memcache://127.0.0.1:11211
           YY_TEST_VALKEY: valkey://127.0.0.1:6379
+          YY_TEST_GCS: http://localhost:4443
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4.6.0
         with:

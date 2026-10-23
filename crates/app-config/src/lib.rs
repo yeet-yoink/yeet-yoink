@@ -2,6 +2,8 @@
 // the `docsrs` configuration attribute is defined
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+#[cfg(feature = "gcs")]
+pub mod gcs;
 #[cfg(feature = "memcache")]
 pub mod memcache;
 #[cfg(feature = "valkey")]
@@ -79,6 +81,11 @@ pub struct BackendsConfig {
     #[cfg(feature = "valkey")]
     #[serde(default)]
     pub valkey: Vec<valkey::ValkeyBackendConfig>,
+    /// Provides Google Cloud Storage specific configuration.
+    #[cfg_attr(docsrs, doc(cfg(feature = "gcs")))]
+    #[cfg(feature = "gcs")]
+    #[serde(default)]
+    pub gcs: Vec<gcs::GcsBackendConfig>,
 }
 
 impl AppConfig {
@@ -193,7 +200,23 @@ mod tests {
         assert_eq!(valkey.tag, "valkey-1");
         assert_eq!(valkey.expiration_sec, Some(3600));
         assert_eq!(valkey.max_file_size_bytes, Some(64 * 1024 * 1024));
-        assert_eq!(valkey.priority, 0);
+        assert_eq!(valkey.priority, 10);
+    }
+
+    #[test]
+    #[cfg(feature = "gcs")]
+    fn example_config_deserializes_gcs() {
+        let yaml = include_str!("../../../example-config.yaml");
+        let config: AppConfig = serde_yaml::from_str(yaml).expect("Failed to deserialize");
+
+        assert_eq!(config.backends.gcs.len(), 1);
+        let gcs = &config.backends.gcs[0];
+        assert_eq!(gcs.tag, "gcs-1");
+        assert_eq!(gcs.bucket, "my-yeet-yoink-bucket");
+        assert_eq!(gcs.prefix.as_deref(), Some("files"));
+        assert_eq!(gcs.service_account_path, None);
+        assert_eq!(gcs.expiration_sec, Some(86400));
+        assert_eq!(gcs.max_file_size_bytes, Some(64 * 1024 * 1024));
     }
 
     #[test]
