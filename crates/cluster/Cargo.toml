@@ -1,0 +1,23 @@
+[package]
+name = "cluster"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+aes-gcm = "0.11.1"
+anyhow = "1.0.104"
+async-trait = "0.1.92"
+chitchat = "~0.11.2"
+hkdf = "0.13.0"
+rand = "0.10.3"
+sha2 = "0.11.1"
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", default-features = false, features = ["net", "time", "sync", "rt"] }
+tracing = "0.1.44"
+
+[dev-dependencies]
+tokio = { version = "1.54.1", features = ["macros", "rt", "rt-multi-thread"] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
