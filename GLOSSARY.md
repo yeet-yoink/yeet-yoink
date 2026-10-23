@@ -48,7 +48,7 @@ _Avoid_: Read-through cache, local cache
 ### Storage backends
 
 **Storage backend**:
-An external system, such as Memcached, that keeps copies of files beyond a yeyo's lease.
+An external system, such as Memcached or Valkey, that keeps copies of files beyond a yeyo's lease.
 _Avoid_: Store, provider, persistence layer
 
 **Backend tag**:

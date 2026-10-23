@@ -4,6 +4,8 @@
 
 #[cfg(feature = "memcache")]
 pub mod memcache;
+#[cfg(feature = "valkey")]
+pub mod valkey;
 
 use clap::ArgMatches;
 use config::builder::DefaultState;
@@ -70,7 +72,13 @@ pub struct BackendsConfig {
     /// Provides Memcached specific configuration.
     #[cfg_attr(docsrs, doc(cfg(feature = "memcache")))]
     #[cfg(feature = "memcache")]
+    #[serde(default)]
     pub memcache: Vec<memcache::MemcacheBackendConfig>,
+    /// Provides Valkey specific configuration.
+    #[cfg_attr(docsrs, doc(cfg(feature = "valkey")))]
+    #[cfg(feature = "valkey")]
+    #[serde(default)]
+    pub valkey: Vec<valkey::ValkeyBackendConfig>,
 }
 
 impl AppConfig {
@@ -172,6 +180,35 @@ mod tests {
         assert_eq!(memcache.expiration_sec, Some(500));
         assert_eq!(memcache.max_file_size_bytes, Some(1047552));
         assert_eq!(memcache.priority, 10);
+    }
+
+    #[test]
+    #[cfg(feature = "valkey")]
+    fn example_config_deserializes_valkey() {
+        let yaml = include_str!("../../../example-config.yaml");
+        let config: AppConfig = serde_yaml::from_str(yaml).expect("Failed to deserialize");
+
+        assert_eq!(config.backends.valkey.len(), 1);
+        let valkey = &config.backends.valkey[0];
+        assert_eq!(valkey.tag, "valkey-1");
+        assert_eq!(valkey.expiration_sec, Some(3600));
+        assert_eq!(valkey.max_file_size_bytes, Some(64 * 1024 * 1024));
+        assert_eq!(valkey.priority, 0);
+    }
+
+    #[test]
+    #[cfg(all(feature = "memcache", feature = "valkey"))]
+    fn backend_sections_are_optional() {
+        let yaml = r#"
+            version: 0
+            backends:
+              valkey:
+                - tag: valkey-1
+                  connection_string: "valkey://127.0.0.1:6379"
+        "#;
+        let config: AppConfig = serde_yaml::from_str(yaml).expect("Failed to deserialize");
+        assert!(config.backends.memcache.is_empty());
+        assert_eq!(config.backends.valkey.len(), 1);
     }
 
     #[test]

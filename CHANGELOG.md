@@ -15,6 +15,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Memcached backends accept a `priority` setting (default `0`). `/yoink` asks backends one at
   a time, highest priority first, and stops at the first intact copy; distributions start in
   the same order ([#56](https://github.com/yeet-yoink/yeet-yoink/issues/56)).
+- Files can be distributed to and fetched from [Valkey](https://valkey.io/) via `backends.valkey`,
+  with the same `expiration_sec`, `max_file_size_bytes` and `priority` settings as Memcached.
+  Valkey backends connect on first use and reconnect on their own
+  ([#12](https://github.com/yeet-yoink/yeet-yoink/issues/12)).
+
+### Changed
+
+- The `backends.memcache` section is now optional, so Valkey-only configurations are valid.
 
 ## [0.0.1] - 2023-06-25
 

@@ -260,7 +260,11 @@ impl BackendRegistryBuilder {
                 }
             }
             Err(e) => {
-                error!("Failed to initialize Memcached backends: {}", e);
+                error!(
+                    "Failed to initialize {backend} backends: {error}",
+                    backend = T::backend_name(),
+                    error = e
+                );
                 Err(e)
             }
         }

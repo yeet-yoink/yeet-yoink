@@ -33,6 +33,10 @@ jobs:
         image: memcached:alpine
         ports:
           - 11211:11211
+      valkey:
+        image: valkey/valkey:alpine
+        ports:
+          - 6379:6379
     strategy:
       matrix:
         os:
@@ -54,6 +58,7 @@ jobs:
         run: cargo nextest run --workspace --verbose --all-features
         env:
           YY_TEST_MEMCACHE: memcache://127.0.0.1:11211
+          YY_TEST_VALKEY: valkey://127.0.0.1:6379
       # - name: Run doctests
       #   run: cargo test --doc --verbose --all-features
 
@@ -65,6 +70,10 @@ jobs:
         image: memcached:alpine
         ports:
           - 11211:11211
+      valkey:
+        image: valkey/valkey:alpine
+        ports:
+          - 6379:6379
     env:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     steps:
@@ -84,6 +93,7 @@ jobs:
         run: cargo llvm-cov nextest --all-features --workspace --lcov --output-path lcov.info
         env:
           YY_TEST_MEMCACHE: memcache://127.0.0.1:11211
+          YY_TEST_VALKEY: valkey://127.0.0.1:6379
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4.6.0
         with:
