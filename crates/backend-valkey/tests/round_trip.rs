@@ -229,3 +229,44 @@ async fn configured_priority_and_size_limit_are_reported() {
     // A limit of 0 disables the size check.
     assert_eq!(backend.max_file_size(), None);
 }
+
+/// Creates a backend for a port nothing listens on.
+fn unreachable_backend() -> ValkeyBackend {
+    let config = ValkeyBackendConfig {
+        tag: "unreachable".into(),
+        connection_string: "valkey://127.0.0.1:1"
+            .parse()
+            .expect("Invalid valkey connection string"),
+        ..ValkeyBackendConfig::default()
+    };
+    ValkeyBackend::try_new(&config).expect("Failed to create valkey backend")
+}
+
+/// Fetches must fail fast while Valkey is unreachable, so that the server
+/// moves on to the next backend instead of waiting out a reconnect backoff.
+#[tokio::test]
+async fn fetch_from_unreachable_valkey_fails_fast() {
+    let backend = unreachable_backend();
+
+    let start = std::time::Instant::now();
+    let result = backend.fetch_file(ShortGuid::new_random()).await;
+
+    assert!(matches!(result, Err(FetchError::BackendSpecific(_))));
+    assert!(
+        start.elapsed() < Duration::from_secs(3),
+        "fetch took {:?}",
+        start.elapsed()
+    );
+}
+
+#[tokio::test]
+async fn distribution_to_unreachable_valkey_fails() {
+    use backend_traits::DistributionError;
+
+    let backend = unreachable_backend();
+    let id = ShortGuid::new_random();
+    let (provider, summary) = buffered_file(id, b"nowhere to go").await;
+
+    let result = backend.distribute_file(id, summary, provider).await;
+    assert!(matches!(result, Err(DistributionError::BackendSpecific(_))));
+}

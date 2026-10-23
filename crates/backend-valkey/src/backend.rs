@@ -19,6 +19,15 @@ use std::time::{Duration, SystemTime};
 use tokio::io::AsyncReadExt;
 use tracing::trace;
 
+/// How long a single connection attempt may take.
+const CONNECTION_TIMEOUT: Duration = Duration::from_secs(1);
+
+/// How often a failed connection attempt is retried within one request.
+///
+/// Requests fail fast while Valkey is unreachable so that fetches fall through
+/// to the next backend quickly; later requests reconnect on their own.
+const CONNECTION_RETRIES: usize = 1;
+
 pub struct ValkeyBackend {
     /// The tag identifying the backend.
     tag: String,
@@ -39,7 +48,11 @@ impl ValkeyBackend {
         let client = Client::open(config.connection_string.as_str())
             .map_err(ValkeyBackendConstructionError::InvalidConnectionString)?;
         let connection = client
-            .get_connection_manager_lazy(ConnectionManagerConfig::new())
+            .get_connection_manager_lazy(
+                ConnectionManagerConfig::new()
+                    .set_connection_timeout(Some(CONNECTION_TIMEOUT))
+                    .set_number_of_retries(CONNECTION_RETRIES),
+            )
             .map_err(ValkeyBackendConstructionError::FailedToCreateConnection)?;
 
         let expiration_secs = config
@@ -181,4 +194,43 @@ pub enum ValkeyBackendConstructionError {
     InvalidConnectionString(RedisError),
     #[error("Failed to create connection: {0}")]
     FailedToCreateConnection(RedisError),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config(tag: &str) -> ValkeyBackendConfig {
+        ValkeyBackendConfig {
+            tag: tag.into(),
+            connection_string: "valkey://127.0.0.1:6379"
+                .parse()
+                .expect("Invalid connection string"),
+            ..ValkeyBackendConfig::default()
+        }
+    }
+
+    #[test]
+    fn reports_backend_info() {
+        assert_eq!(ValkeyBackend::backend_name(), "Valkey");
+        assert_eq!(ValkeyBackend::backend_version(), env!("CARGO_PKG_VERSION"));
+    }
+
+    #[tokio::test]
+    async fn creates_one_backend_per_config_without_connecting() {
+        let mut app_config = AppConfig::default();
+        app_config.backends.valkey = vec![config("first"), config("second")];
+
+        let backends = ValkeyBackend::try_from_config(&app_config).expect("Failed to create");
+
+        let tags: Vec<_> = backends.iter().map(|backend| backend.tag()).collect();
+        assert_eq!(tags, ["first", "second"]);
+    }
+
+    #[tokio::test]
+    async fn no_config_creates_no_backends() {
+        let backends =
+            ValkeyBackend::try_from_config(&AppConfig::default()).expect("Failed to create");
+        assert!(backends.is_empty());
+    }
 }
