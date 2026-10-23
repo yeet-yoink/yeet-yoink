@@ -6,10 +6,10 @@
 use app_config::valkey::ValkeyBackendConfig;
 use axum_extra::headers::ContentType;
 use backbone::{Backbone, CompletionMode, FileAccessorBridge};
-use backend_traits::{DistributeFile, FetchError, FetchFile};
+use backend_traits::{DistributeFile, FetchError, FetchFile, FetchedFile};
 use backend_valkey::ValkeyBackend;
 use file_distribution::protobuf::ItemMetadata;
-use file_distribution::{FileProvider, WriteSummary};
+use file_distribution::{FileHashes, FileProvider, WriteSummary};
 use rendezvous::Rendezvous;
 use shortguid::ShortGuid;
 use std::sync::Arc;
@@ -51,6 +51,17 @@ async fn raw_connection() -> redis::aio::MultiplexedConnection {
         .expect("Failed to connect to valkey")
 }
 
+/// Reads the content of a fetched file, keeping its metadata.
+async fn read_content(mut file: FetchedFile) -> (FetchedFile, Vec<u8>) {
+    use tokio::io::AsyncReadExt;
+    let mut data = Vec::new();
+    file.content
+        .read_to_end(&mut data)
+        .await
+        .expect("Failed to read content");
+    (file, data)
+}
+
 /// Buffers a file in a backbone and returns a provider for it, as the server does.
 async fn buffered_file(id: ShortGuid, data: &[u8]) -> (FileProvider, Arc<WriteSummary>) {
     let (sender, receiver) = mpsc::channel(16);
@@ -76,7 +87,12 @@ async fn buffered_file(id: ShortGuid, data: &[u8]) -> (FileProvider, Arc<WriteSu
         )
         .await
         .expect("Failed to create file");
-    writer.write(data).await.expect("Failed to write");
+    // Writes may be partial; write until everything is buffered.
+    let mut remaining = data;
+    while !remaining.is_empty() {
+        let written = writer.write(remaining).await.expect("Failed to write");
+        remaining = &remaining[written..];
+    }
     writer.sync_data().await.expect("Failed to sync");
     let summary = writer
         .finalize(CompletionMode::NoSync)
@@ -107,13 +123,14 @@ async fn distributed_file_can_be_fetched() {
         .await
         .expect("Failed to fetch")
         .expect("File not found");
+    let (file, data) = read_content(file).await;
 
-    assert_eq!(file.data, &b"hello, valkey"[..]);
+    assert_eq!(data, &b"hello, valkey"[..]);
     assert_eq!(file.file_name.as_deref(), Some("hello.txt"));
     assert_eq!(file.content_type.as_deref(), Some("text/plain"));
     assert_eq!(file.hashes.md5, summary.hashes.md5);
     assert_eq!(file.hashes.sha256, summary.hashes.sha256);
-    assert!(file.is_intact());
+    assert_eq!(FileHashes::of(&data), file.hashes);
 
     let expires_at = file.expires_at.expect("Missing expiry");
     let remaining = expires_at
@@ -176,6 +193,7 @@ async fn zero_expiration_keeps_the_file_indefinitely() {
         .await
         .expect("Failed to fetch")
         .expect("File not found");
+    let (file, _) = read_content(file).await;
     assert_eq!(file.expires_at, None);
 
     // -1: the key exists without an expiry.
@@ -269,4 +287,62 @@ async fn distribution_to_unreachable_valkey_fails() {
 
     let result = backend.distribute_file(id, summary, provider).await;
     assert!(matches!(result, Err(DistributionError::BackendSpecific(_))));
+}
+
+/// Files larger than one read range are reassembled from several ranges.
+#[tokio::test]
+async fn file_spanning_several_ranges_is_read_completely() {
+    let Some(backend) = backend(Some(60)) else {
+        return;
+    };
+    let id = ShortGuid::new_random();
+    let data: Vec<u8> = (0..2_621_440u32).map(|i| (i % 251) as u8).collect();
+    let (provider, summary) = buffered_file(id, &data).await;
+
+    backend
+        .distribute_file(id, summary, provider)
+        .await
+        .expect("Failed to distribute");
+    let file = backend
+        .fetch_file(id)
+        .await
+        .expect("Failed to fetch")
+        .expect("File not found");
+    assert_eq!(file.size, Some(data.len() as u64));
+    let (file, fetched) = read_content(file).await;
+
+    assert_eq!(fetched.len(), data.len());
+    assert!(fetched == data, "Content differs");
+    assert_eq!(FileHashes::of(&fetched), file.hashes);
+}
+
+/// A value that shrinks between reading the size and the content ends the
+/// stream early, so the copy is rejected by its length.
+#[tokio::test]
+async fn value_changing_while_read_ends_short() {
+    let Some(backend) = backend(Some(60)) else {
+        return;
+    };
+    let id = ShortGuid::new_random();
+    let data = vec![b'x'; 1_500_000];
+    let (provider, summary) = buffered_file(id, &data).await;
+    backend
+        .distribute_file(id, summary, provider)
+        .await
+        .expect("Failed to distribute");
+
+    let file = backend
+        .fetch_file(id)
+        .await
+        .expect("Failed to fetch")
+        .expect("File not found");
+    redis::cmd("SET")
+        .arg(format!("data-{id}"))
+        .arg(&b"short"[..])
+        .query_async::<()>(&mut raw_connection().await)
+        .await
+        .expect("Failed to overwrite value");
+    let (file, fetched) = read_content(file).await;
+
+    assert!((fetched.len() as u64) < file.size.expect("Missing size"));
 }

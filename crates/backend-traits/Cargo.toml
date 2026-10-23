@@ -10,7 +10,10 @@ bytes = "1.12.1"
 file-distribution = { version = "0.1.0", path = "../file-distribution" }
 shortguid = "0.7.0"
 thiserror = "2.0.21"
-tokio = { version = "1.54.1", default-features = false, features = ["rt", "sync"] }
+tokio = { version = "1.54.1", default-features = false, features = ["rt", "sync", "io-util"] }
+
+[dev-dependencies]
+tokio = { version = "1.54.1", features = ["macros", "rt"] }
 
 [package.metadata.docs.rs]
 all-features = true

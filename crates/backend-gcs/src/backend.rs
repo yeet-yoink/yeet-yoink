@@ -11,6 +11,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use file_distribution::protobuf::ItemMetadata;
 use file_distribution::{FileProvider, GetFile, WriteSummary};
+use futures::TryStreamExt;
 use map_ok::{BoxOk, MapOk};
 use object_store::gcp::GoogleCloudStorageBuilder;
 use object_store::path::Path;
@@ -21,6 +22,7 @@ use shortguid::ShortGuid;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::io::AsyncReadExt;
+use tokio_util::io::StreamReader;
 use tracing::trace;
 
 /// The custom object metadata key holding the serialized file metadata.
@@ -158,7 +160,7 @@ impl DistributeFile for GcsBackend {
         file_provider: FileProvider,
     ) -> Result<(), DistributionError> {
         // The backend registry skips files above max_file_size(), so the
-        // content can be buffered in memory.
+        // content can be buffered in memory for the upload.
         let mut file = file_provider.get_file(id).await?;
         let mut data = Vec::with_capacity(summary.file_size_bytes);
         file.read_to_end(&mut data).await?;
@@ -211,8 +213,7 @@ impl FetchFile for GcsBackend {
             Err(e) => return Err(FetchError::BackendSpecific(Box::new(e))),
         };
 
-        // Fetched files are held in memory; refuse objects this backend
-        // would not have stored.
+        // Refuse objects this backend would not have stored.
         if let Some(max) = self.max_file_size
             && result.meta.size > max
         {
@@ -232,12 +233,10 @@ impl FetchFile for GcsBackend {
             .decode(metadata.as_ref())
             .map_err(|e| FetchError::InvalidMetadata(e.to_string()))?;
 
-        let data = result
-            .bytes()
-            .await
-            .map_err(|e| FetchError::BackendSpecific(Box::new(e)))?;
-        let file = FetchedFile::from_stored(&metadata, data)?;
-        trace!(file_id = %id, "Fetched file {id} from object {path}");
+        let size = result.meta.size;
+        let content = StreamReader::new(result.into_stream().map_err(std::io::Error::other));
+        let file = FetchedFile::from_stored(&metadata, Some(size), Box::new(content))?;
+        trace!(file_id = %id, "Fetching file {id} of {size} bytes from object {path}");
         Ok(Some(file))
     }
 }

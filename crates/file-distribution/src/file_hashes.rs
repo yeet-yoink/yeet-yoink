@@ -1,8 +1,8 @@
-use crate::hash::{Md5Digest, Sha256Digest};
+use crate::hash::{HashMd5, HashSha256, Md5Digest, Sha256Digest};
 use std::fmt::{Debug, Display, Formatter};
 
 /// The calculated hashes of a file.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct FileHashes {
     /// The MD5 digest.
     pub md5: Md5Digest,
@@ -13,6 +13,15 @@ pub struct FileHashes {
 impl FileHashes {
     pub fn new(md5: Md5Digest, sha256: Sha256Digest) -> Self {
         Self { md5, sha256 }
+    }
+
+    /// Calculates the hashes of the given content.
+    pub fn of(data: &[u8]) -> Self {
+        let mut md5 = HashMd5::new();
+        md5.update(data);
+        let mut sha256 = HashSha256::new();
+        sha256.update(data);
+        Self::new(md5.finalize(), sha256.finalize())
     }
 }
 
@@ -50,5 +59,7 @@ mod tests {
             SHA256 ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
         assert_eq!(hashes.to_string(), expected);
         assert_eq!(format!("{hashes:?}"), expected);
+        assert_eq!(FileHashes::of(b"abc"), hashes);
+        assert_ne!(FileHashes::of(b"abd"), hashes);
     }
 }

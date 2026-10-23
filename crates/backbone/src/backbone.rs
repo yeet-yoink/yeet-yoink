@@ -2,11 +2,11 @@ use crate::CompletionMode;
 use crate::file_reader::FileReader;
 use crate::file_record::{FileOrigin, FileRecord, Lease};
 use crate::file_writer::{FileWriter, FinalizationError, SynchronizationError};
-use crate::file_writer_guard::FileWriterGuard;
+use crate::file_writer_guard::{FileWriterGuard, WriteResult};
 use async_tempfile::TempFile;
 use axum_extra::headers::ContentType;
 use backend_traits::{BackendCommand, BackendCommandSender, FetchedFile};
-use file_distribution::{BoxedFileReader, GetFileReaderError, WriteSummary};
+use file_distribution::{BoxedFileReader, FileHashes, GetFileReaderError, WriteSummary};
 use rendezvous::RendezvousGuard;
 use shared_files::{SharedFileWriter, SharedTemporaryFile};
 use shortguid::ShortGuid;
@@ -14,10 +14,14 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
+use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{RwLock, mpsc, oneshot, watch};
 use tokio::time::Instant;
 use tracing::info;
+
+/// The size of the chunks in which fetched files are buffered.
+const CACHE_CHUNK_SIZE: usize = 64 * 1024;
 
 /// A local file distribution manager.
 ///
@@ -85,48 +89,158 @@ impl Backbone {
         .await
     }
 
-    /// Buffers a file fetched from a backend so that subsequent reads are served
-    /// locally (near cache). The file is not distributed to the backends again.
+    /// Buffers a file fetched from a backend and returns a reader to it.
     ///
-    /// The local lease never extends beyond the backend copy's expiry.
+    /// The content is streamed into a private buffer and checked against the
+    /// size and hashes recorded with the file; nothing is visible to other
+    /// readers until it passes. With `publish`, the verified file then stays
+    /// available to subsequent reads (near cache) for the local lease, which
+    /// never extends beyond the backend copy's expiry. It is not distributed to
+    /// the backends again.
+    ///
+    /// If another fetch published the same file first, a reader to that copy is
+    /// returned instead.
     pub async fn cache_file(
         &self,
         id: ShortGuid,
-        file: &FetchedFile,
-    ) -> Result<(), CacheFileError> {
-        let content_type = file.content_type.as_deref().and_then(|c| c.parse().ok());
+        mut file: FetchedFile,
+        publish: bool,
+    ) -> Result<BoxedFileReader, CacheFileError> {
+        let content_type: Option<ContentType> =
+            file.content_type.as_deref().and_then(|c| c.parse().ok());
+
+        // A randomly named file, so that concurrent fetches of the same ID
+        // do not collide.
+        let buffer = SharedTemporaryFile::from(
+            TempFile::new()
+                .await
+                .map_err(|e| NewFileError::FailedCreatingFile(id, e))?,
+        );
+        let mut writer = FileWriter::new(
+            &id,
+            Self::create_writer_for_file(id, &buffer).await?,
+            file.file_name.take(),
+            content_type.as_ref().map(ToString::to_string),
+        );
+
+        let mut chunk = vec![0; CACHE_CHUNK_SIZE];
+        let mut written: u64 = 0;
+        loop {
+            let read = file.content.read(&mut chunk).await?;
+            if read == 0 {
+                break;
+            }
+            written += read as u64;
+            if let Some(size) = file.size
+                && written > size
+            {
+                return Err(CacheFileError::SizeMismatch {
+                    expected: size,
+                    actual: written,
+                });
+            }
+
+            let mut remaining = &chunk[..read];
+            while !remaining.is_empty() {
+                let count = writer.write(remaining).await?;
+                if count == 0 {
+                    return Err(CacheFileError::Write(std::io::ErrorKind::WriteZero.into()));
+                }
+                remaining = &remaining[count..];
+            }
+        }
+
+        if let Some(size) = file.size
+            && written != size
+        {
+            return Err(CacheFileError::SizeMismatch {
+                expected: size,
+                actual: written,
+            });
+        }
+
+        // The lease starts now, after the transfer, and must not outlast the
+        // backend's copy.
         let retention = file.expires_at.map(|expires_at| {
             expires_at
                 .duration_since(SystemTime::now())
                 .unwrap_or_default()
         });
-        let registration = Registration {
-            origin: FileOrigin::Backend,
-            lease: retention.map_or(self.temporal_lease, |r| r.min(self.temporal_lease)),
-        };
-        let mut writer = self
-            .register_file(
-                id,
-                Some(file.data.len() as u64),
-                content_type,
-                Some(file.hashes.md5.0),
-                file.file_name.clone(),
-                registration,
-            )
-            .await?;
-
-        let mut remaining = &file.data[..];
-        while !remaining.is_empty() {
-            let written = writer.write(remaining).await?;
-            if written == 0 {
-                return Err(CacheFileError::Write(std::io::ErrorKind::WriteZero.into()));
-            }
-            remaining = &remaining[written..];
-        }
+        let lease = retention.map_or(self.temporal_lease, |r| r.min(self.temporal_lease));
 
         writer.sync_data().await?;
-        writer.finalize(CompletionMode::NoSync).await?;
-        Ok(())
+        let summary = writer.finalize(CompletionMode::NoSync, lease).await?;
+        if summary.hashes != file.hashes {
+            return Err(CacheFileError::IntegrityCheckFailed {
+                expected: file.hashes,
+                actual: summary.hashes.clone(),
+            });
+        }
+
+        // Open the reader before publishing, so that it stays valid even if
+        // a short lease ends right away.
+        let created = Instant::now();
+        let reader = BoxedFileReader::new(FileReader::new(
+            buffer
+                .reader()
+                .await
+                .map_err(|e| GetFileReaderError::FileError(id, e))?,
+            content_type.clone(),
+            created,
+            lease,
+            Some(summary.clone()),
+        ));
+
+        if publish
+            && !self
+                .publish_cached_file(id, buffer, summary, content_type, lease, created)
+                .await
+        {
+            // Another fetch published the file first; serve that copy, so that
+            // subsequent reads see the same file.
+            if let Ok(existing) = self.get_file(id).await {
+                return Ok(existing);
+            }
+        }
+        Ok(reader)
+    }
+
+    /// Registers a verified file fetched from a backend. Returns `false` if a
+    /// file with the same ID is already registered.
+    async fn publish_cached_file(
+        &self,
+        id: ShortGuid,
+        buffer: SharedTemporaryFile,
+        summary: Arc<WriteSummary>,
+        content_type: Option<ContentType>,
+        lease: Duration,
+        created: Instant,
+    ) -> bool {
+        let mut inner = self.inner.write().await;
+        let Entry::Vacant(entry) = inner.open.entry(id) else {
+            return false;
+        };
+
+        let (sender, receiver) = oneshot::channel();
+        let mut record = FileRecord::new(
+            id,
+            buffer,
+            self.sender.clone(),
+            receiver,
+            Lease {
+                duration: lease,
+                shutdown: self.shutdown.subscribe(),
+            },
+            content_type,
+            created,
+        );
+        record.origin = FileOrigin::Backend;
+        record.summary_slot().set(summary.clone()).await;
+        entry.insert(record);
+
+        // The file is complete; start its lease right away.
+        sender.send(WriteResult::Success(summary)).ok();
+        true
     }
 
     async fn register_file(
@@ -289,8 +403,17 @@ struct Registration {
 pub enum CacheFileError {
     #[error(transparent)]
     NewFile(#[from] NewFileError),
-    #[error("Failed to write the file: {0}")]
+    #[error("Failed to transfer the file: {0}")]
     Write(#[from] std::io::Error),
+    #[error("The content was {actual} bytes long, but {expected} bytes were announced")]
+    SizeMismatch { expected: u64, actual: u64 },
+    #[error("The content does not match the recorded hashes (expected {expected}, got {actual})")]
+    IntegrityCheckFailed {
+        expected: FileHashes,
+        actual: FileHashes,
+    },
+    #[error(transparent)]
+    Read(#[from] GetFileReaderError),
     #[error(transparent)]
     Sync(#[from] SynchronizationError),
     #[error(transparent)]
@@ -491,20 +614,45 @@ mod tests {
         assert_eq!(summary.file_size_bytes, 3);
     }
 
-    fn fetched_file(data: &'static [u8]) -> FetchedFile {
-        use file_distribution::FileHashes;
-        use file_distribution::hash::{HashMd5, HashSha256};
-
-        let mut md5 = HashMd5::new();
-        md5.update(data);
-        let mut sha256 = HashSha256::new();
-        sha256.update(data);
+    /// Creates a fetched file whose hashes are those of `hashed`.
+    fn fetched_file_hashed_as(data: &'static [u8], hashed: &[u8]) -> FetchedFile {
         FetchedFile {
             file_name: Some("cached.txt".into()),
             content_type: Some("text/plain".into()),
-            hashes: FileHashes::new(md5.finalize(), sha256.finalize()),
-            data: bytes::Bytes::from_static(data),
+            hashes: file_distribution::FileHashes::of(hashed),
+            size: Some(data.len() as u64),
+            content: Box::new(data),
             expires_at: None,
+        }
+    }
+
+    fn fetched_file(data: &'static [u8]) -> FetchedFile {
+        fetched_file_hashed_as(data, data)
+    }
+
+    async fn read_to_end(mut reader: BoxedFileReader) -> Vec<u8> {
+        use tokio::io::AsyncReadExt;
+        let mut data = Vec::new();
+        reader.read_to_end(&mut data).await.expect("Failed to read");
+        data
+    }
+
+    /// A reader that yields some content and then fails.
+    struct FailingReader(Option<&'static [u8]>);
+
+    impl tokio::io::AsyncRead for FailingReader {
+        fn poll_read(
+            mut self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+            buf: &mut tokio::io::ReadBuf<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(match self.0.take() {
+                Some(data) => {
+                    buf.put_slice(data);
+                    Ok(())
+                }
+                None => Err(std::io::ErrorKind::ConnectionReset.into()),
+            })
         }
     }
 
@@ -513,13 +661,48 @@ mod tests {
         let fixture = fixture(LONG_LEASE);
         let id = ShortGuid::new_random();
 
-        fixture
+        let reader = fixture
             .backbone
-            .cache_file(id, &fetched_file(b"abc"))
+            .cache_file(id, fetched_file(b"abc"), true)
             .await
             .expect("Failed to cache file");
 
+        assert_eq!(read_to_end(reader).await, b"abc");
         assert_eq!(read_file(&fixture.backbone, id).await, b"abc");
+    }
+
+    #[tokio::test]
+    async fn cached_file_carries_the_recorded_metadata() {
+        use file_distribution::FileReaderTrait;
+
+        let fixture = fixture(LONG_LEASE);
+        let id = ShortGuid::new_random();
+
+        let reader = fixture
+            .backbone
+            .cache_file(id, fetched_file(b"abc"), true)
+            .await
+            .expect("Failed to cache file");
+
+        let summary = reader.summary().clone().expect("Missing summary");
+        assert_eq!(summary.file_name.as_deref(), Some("cached.txt"));
+        assert_eq!(summary.hashes, file_distribution::FileHashes::of(b"abc"));
+        assert_eq!(reader.content_type().as_deref(), Some("text/plain"));
+    }
+
+    #[tokio::test]
+    async fn unpublished_file_is_served_but_not_registered() {
+        let fixture = fixture(LONG_LEASE);
+        let id = ShortGuid::new_random();
+
+        let reader = fixture
+            .backbone
+            .cache_file(id, fetched_file(b"abc"), false)
+            .await
+            .expect("Failed to cache file");
+
+        assert!(is_unknown(&fixture.backbone, id).await);
+        assert_eq!(read_to_end(reader).await, b"abc");
     }
 
     #[tokio::test]
@@ -530,7 +713,7 @@ mod tests {
 
         fixture
             .backbone
-            .cache_file(cached, &fetched_file(b"abc"))
+            .cache_file(cached, fetched_file(b"abc"), true)
             .await
             .expect("Failed to cache file");
         write_file(&fixture.backbone, uploaded, b"def")
@@ -561,7 +744,7 @@ mod tests {
 
         fixture
             .backbone
-            .cache_file(id, &file)
+            .cache_file(id, file, true)
             .await
             .expect("Failed to cache file");
 
@@ -573,20 +756,119 @@ mod tests {
     async fn corrupt_cached_file_is_rejected() {
         let fixture = fixture(LONG_LEASE);
         let id = ShortGuid::new_random();
-        let file = FetchedFile {
-            data: bytes::Bytes::from_static(b"abd"),
-            ..fetched_file(b"abc")
-        };
 
-        let result = fixture.backbone.cache_file(id, &file).await;
+        let result = fixture
+            .backbone
+            .cache_file(id, fetched_file_hashed_as(b"abd", b"abc"), true)
+            .await;
 
         assert!(matches!(
             result,
-            Err(CacheFileError::Finalize(
-                FinalizationError::IntegrityCheckFailed(..)
-            ))
+            Err(CacheFileError::IntegrityCheckFailed { .. })
         ));
-        eventually(|| is_unknown(&fixture.backbone, id)).await;
+        assert!(is_unknown(&fixture.backbone, id).await);
+    }
+
+    #[tokio::test]
+    async fn content_of_the_wrong_length_is_rejected() {
+        let fixture = fixture(LONG_LEASE);
+
+        for announced in [2, 4] {
+            let id = ShortGuid::new_random();
+            let file = FetchedFile {
+                size: Some(announced),
+                ..fetched_file(b"abc")
+            };
+
+            let result = fixture.backbone.cache_file(id, file, true).await;
+
+            assert!(
+                matches!(result, Err(CacheFileError::SizeMismatch { expected, .. }) if expected == announced),
+                "{announced} bytes announced"
+            );
+            assert!(is_unknown(&fixture.backbone, id).await);
+        }
+    }
+
+    #[tokio::test]
+    async fn content_of_unknown_length_is_accepted() {
+        let fixture = fixture(LONG_LEASE);
+        let id = ShortGuid::new_random();
+        let file = FetchedFile {
+            size: None,
+            ..fetched_file(b"abc")
+        };
+
+        let reader = fixture
+            .backbone
+            .cache_file(id, file, true)
+            .await
+            .expect("Failed to cache file");
+        assert_eq!(read_to_end(reader).await, b"abc");
+    }
+
+    #[tokio::test]
+    async fn interrupted_transfer_is_rejected() {
+        let fixture = fixture(LONG_LEASE);
+        let id = ShortGuid::new_random();
+        let file = FetchedFile {
+            content: Box::new(FailingReader(Some(b"ab"))),
+            ..fetched_file(b"abc")
+        };
+
+        let result = fixture.backbone.cache_file(id, file, true).await;
+
+        assert!(matches!(result, Err(CacheFileError::Write(_))));
+        assert!(is_unknown(&fixture.backbone, id).await);
+    }
+
+    #[tokio::test]
+    async fn unverified_content_is_not_visible_while_buffering() {
+        use tokio::io::AsyncWriteExt;
+
+        let fixture = fixture(LONG_LEASE);
+        let id = ShortGuid::new_random();
+        let (mut sender, receiver) = tokio::io::duplex(16);
+        let file = FetchedFile {
+            content: Box::new(receiver),
+            ..fetched_file(b"abc")
+        };
+
+        let (cached, ()) = tokio::join!(fixture.backbone.cache_file(id, file, true), async {
+            sender.write_all(b"ab").await.expect("Failed to send");
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            assert!(
+                is_unknown(&fixture.backbone, id).await,
+                "Partial file visible"
+            );
+
+            sender.write_all(b"c").await.expect("Failed to send");
+            drop(sender);
+        });
+
+        cached.expect("Failed to cache file");
+        assert_eq!(read_file(&fixture.backbone, id).await, b"abc");
+    }
+
+    #[tokio::test]
+    async fn concurrent_fetches_share_the_first_published_copy() {
+        let fixture = fixture(LONG_LEASE);
+        let id = ShortGuid::new_random();
+
+        let first = fixture
+            .backbone
+            .cache_file(id, fetched_file(b"abc"), true)
+            .await
+            .expect("Failed to cache file");
+        let second = fixture
+            .backbone
+            .cache_file(id, fetched_file(b"abc"), true)
+            .await
+            .expect("Failed to cache file");
+
+        assert_eq!(read_to_end(first).await, b"abc");
+        assert_eq!(read_to_end(second).await, b"abc");
+        assert_eq!(read_file(&fixture.backbone, id).await, b"abc");
     }
 
     #[tokio::test]

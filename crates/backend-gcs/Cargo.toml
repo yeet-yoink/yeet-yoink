@@ -10,12 +10,14 @@ base64 = "0.23.1"
 bytes = "1.12.1"
 backend-traits = { version = "0.1.0", path = "../backend-traits" }
 file-distribution = { version = "0.1.0", path = "../file-distribution" }
+futures = "0.3.34"
 map-ok = "1.0.0"
 object_store = { version = "0.14.2", default-features = false, features = ["gcp"] }
 serde_json = "1.0.154"
 shortguid = "0.7.0"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", default-features = false, features = ["io-util"] }
+tokio-util = { version = "0.7.20", features = ["io"] }
 tracing = "0.1.44"
 
 [dev-dependencies]

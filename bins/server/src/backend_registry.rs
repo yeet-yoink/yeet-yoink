@@ -1,9 +1,10 @@
 use app_config::AppConfig;
+use backbone::{Backbone, CacheFileError};
 use backend_traits::{
-    Backend, BackendCommand, BackendCommandSender, BackendRegistration, FetchedFile,
-    RegisterBackendError, TryCreateFromConfig,
+    Backend, BackendCommand, BackendCommandSender, BackendRegistration, RegisterBackendError,
+    TryCreateFromConfig,
 };
-use file_distribution::FileProvider;
+use file_distribution::{BoxedFileReader, FileProvider};
 use futures::future::join_all;
 use rendezvous::RendezvousGuard;
 use shortguid::ShortGuid;
@@ -148,26 +149,46 @@ impl BackendFetcher {
         Self { backends }
     }
 
-    /// Fetches a file from the first backend that holds an intact, unexpired copy.
+    /// Fetches a file from the first backend that holds an intact, unexpired
+    /// copy, buffers it in the backbone and returns a reader to the verified copy.
     ///
-    /// Backends are queried in priority order. Errors, expired and corrupt
-    /// copies are logged and skipped.
-    pub async fn fetch(&self, id: ShortGuid) -> Option<FetchedFile> {
+    /// Backends are queried in priority order. Errors, expired copies and copies
+    /// that fail verification or break off mid-transfer are logged and skipped.
+    /// With `near_cache`, the copy stays available to subsequent reads.
+    pub async fn fetch(
+        &self,
+        id: ShortGuid,
+        backbone: &Backbone,
+        near_cache: bool,
+    ) -> Option<BoxedFileReader> {
         for backend in self.backends.iter() {
-            match backend.fetch_file(id).await {
+            let tag = backend.tag();
+            let file = match backend.fetch_file(id).await {
                 Ok(Some(file)) if file.is_expired() => {
-                    debug!(file_id = %id, "Backend {tag} returned an expired copy of file {id}", tag = backend.tag());
+                    debug!(file_id = %id, "Backend {tag} returned an expired copy of file {id}");
+                    continue;
                 }
-                Ok(Some(file)) if file.is_intact() => {
-                    debug!(file_id = %id, "Fetched file {id} from backend {tag}", tag = backend.tag());
-                    return Some(file);
-                }
-                Ok(Some(_)) => {
-                    warn!(file_id = %id, "Backend {tag} returned a corrupt copy of file {id}", tag = backend.tag());
-                }
-                Ok(None) => {}
+                Ok(Some(file)) => file,
+                Ok(None) => continue,
                 Err(e) => {
-                    warn!(file_id = %id, "Failed to fetch file {id} from backend {tag}: {error}", tag = backend.tag(), error = e);
+                    warn!(file_id = %id, "Failed to fetch file {id} from backend {tag}: {e}");
+                    continue;
+                }
+            };
+
+            match backbone.cache_file(id, file, near_cache).await {
+                Ok(reader) => {
+                    debug!(file_id = %id, "Fetched file {id} from backend {tag}");
+                    return Some(reader);
+                }
+                Err(
+                    e @ (CacheFileError::IntegrityCheckFailed { .. }
+                    | CacheFileError::SizeMismatch { .. }),
+                ) => {
+                    warn!(file_id = %id, "Backend {tag} returned a corrupt copy of file {id}: {e}");
+                }
+                Err(e) => {
+                    warn!(file_id = %id, "Failed to transfer file {id} from backend {tag}: {e}");
                 }
             }
         }
@@ -283,13 +304,40 @@ impl BackendRegistryBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{FakeBackend, fetched_file};
+    use crate::test_support::{FakeBackend, FakeFile, fetched_file};
     use bytes::Bytes;
+    use rendezvous::Rendezvous;
+    use std::time::Duration;
+    use tokio::io::AsyncReadExt;
 
     fn fetcher(backends: &[FakeBackend]) -> BackendFetcher {
         BackendFetcher::new(Arc::new(
             backends.iter().cloned().map(Backend::wrap).collect(),
         ))
+    }
+
+    /// Creates a backbone to buffer fetched files in.
+    fn backbone() -> Backbone {
+        let (sender, receiver) = mpsc::channel(16);
+        // Nothing is distributed in these tests; keep the channel open.
+        std::mem::forget(receiver);
+        let rendezvous = Rendezvous::new();
+        let backbone = Backbone::new(
+            sender.into(),
+            rendezvous.fork_guard(),
+            Duration::from_secs(60),
+        );
+        // Dropping a Rendezvous blocks until all guards complete.
+        std::mem::forget(rendezvous);
+        backbone
+    }
+
+    /// Fetches a file without near-caching it and reads its content.
+    async fn fetch(fetcher: &BackendFetcher, id: ShortGuid) -> Option<Vec<u8>> {
+        let mut reader = fetcher.fetch(id, &backbone(), false).await?;
+        let mut data = Vec::new();
+        reader.read_to_end(&mut data).await.expect("Failed to read");
+        Some(data)
     }
 
     #[tokio::test]
@@ -299,9 +347,9 @@ mod tests {
         let id = ShortGuid::new_random();
         healthy.insert(id, fetched_file(b"abc"));
 
-        let file = fetcher(&[failing.clone(), healthy.clone()]).fetch(id).await;
+        let file = fetch(&fetcher(&[failing.clone(), healthy.clone()]), id).await;
 
-        assert_eq!(file.map(|f| f.data), Some(Bytes::from_static(b"abc")));
+        assert_eq!(file.as_deref(), Some(&b"abc"[..]));
         assert_eq!((failing.fetches(), healthy.fetches()), (1, 1));
     }
 
@@ -312,16 +360,16 @@ mod tests {
         let id = ShortGuid::new_random();
         corrupt.insert(
             id,
-            FetchedFile {
+            FakeFile {
                 data: Bytes::from_static(b"abd"),
                 ..fetched_file(b"abc")
             },
         );
         healthy.insert(id, fetched_file(b"abc"));
 
-        let file = fetcher(&[corrupt, healthy]).fetch(id).await;
+        let file = fetch(&fetcher(&[corrupt, healthy]), id).await;
 
-        assert_eq!(file.map(|f| f.data), Some(Bytes::from_static(b"abc")));
+        assert_eq!(file.as_deref(), Some(&b"abc"[..]));
     }
 
     #[tokio::test]
@@ -332,13 +380,13 @@ mod tests {
         let id = ShortGuid::new_random();
         expired.insert(
             id,
-            FetchedFile {
+            FakeFile {
                 expires_at: Some(SystemTime::now() - Duration::from_secs(1)),
                 ..fetched_file(b"abc")
             },
         );
 
-        assert!(fetcher(&[expired]).fetch(id).await.is_none());
+        assert!(fetch(&fetcher(&[expired]), id).await.is_none());
     }
 
     #[tokio::test]
@@ -349,7 +397,11 @@ mod tests {
         first.insert(id, fetched_file(b"abc"));
         second.insert(id, fetched_file(b"abc"));
 
-        assert!(fetcher(&[first, second.clone()]).fetch(id).await.is_some());
+        assert!(
+            fetch(&fetcher(&[first, second.clone()]), id)
+                .await
+                .is_some()
+        );
         assert_eq!(second.fetches(), 0);
     }
 
@@ -385,10 +437,12 @@ mod tests {
         }
 
         assert!(
-            prioritized(&[low.clone(), default.clone(), high.clone()])
-                .fetch(id)
-                .await
-                .is_some()
+            fetch(
+                &prioritized(&[low.clone(), default.clone(), high.clone()]),
+                id
+            )
+            .await
+            .is_some()
         );
         assert_eq!(
             (high.fetches(), default.fetches(), low.fetches()),
@@ -399,7 +453,6 @@ mod tests {
     #[tokio::test]
     async fn registry_orders_backends_by_priority() {
         use backbone::FileAccessorBridge;
-        use rendezvous::Rendezvous;
 
         let low = FakeBackend::default();
         let high = FakeBackend::default().with_priority(10);
@@ -416,7 +469,7 @@ mod tests {
         // Dropping a Rendezvous blocks until all guards complete.
         std::mem::forget(rendezvous);
 
-        assert!(registry.fetcher().fetch(id).await.is_some());
+        assert!(fetch(&registry.fetcher(), id).await.is_some());
         assert_eq!((high.fetches(), low.fetches()), (1, 0));
     }
 
@@ -440,7 +493,6 @@ mod tests {
     #[tokio::test]
     async fn failing_backend_construction_is_reported() {
         use backbone::FileAccessorBridge;
-        use rendezvous::Rendezvous;
 
         let rendezvous = Rendezvous::new();
         let accessor = Arc::new(FileAccessorBridge::default());
@@ -464,8 +516,7 @@ mod tests {
         low.insert(id, fetched_file(b"abc"));
 
         assert!(
-            prioritized(&[low.clone(), high.clone()])
-                .fetch(id)
+            fetch(&prioritized(&[low.clone(), high.clone()]), id)
                 .await
                 .is_some()
         );
@@ -481,8 +532,7 @@ mod tests {
         second.insert(id, fetched_file(b"abc"));
 
         assert!(
-            prioritized(&[first.clone(), second.clone()])
-                .fetch(id)
+            fetch(&prioritized(&[first.clone(), second.clone()]), id)
                 .await
                 .is_some()
         );
@@ -490,7 +540,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn fetch_skips_copies_of_the_wrong_length() {
+        let truncated = FakeBackend::default();
+        let healthy = FakeBackend::default();
+        let id = ShortGuid::new_random();
+        truncated.insert(
+            id,
+            FakeFile {
+                data: Bytes::from_static(b"ab"),
+                ..fetched_file(b"abc")
+            },
+        );
+        healthy.insert(id, fetched_file(b"abc"));
+
+        let file = fetch(&fetcher(&[truncated, healthy.clone()]), id).await;
+
+        assert_eq!(file.as_deref(), Some(&b"abc"[..]));
+        assert_eq!(healthy.fetches(), 1);
+    }
+
+    #[tokio::test]
+    async fn near_cached_copy_is_registered_in_the_backbone() {
+        let backend = FakeBackend::default();
+        let id = ShortGuid::new_random();
+        backend.insert(id, fetched_file(b"abc"));
+        let fetcher = fetcher(&[backend]);
+
+        let backbone = backbone();
+        assert!(fetcher.fetch(id, &backbone, true).await.is_some());
+        assert!(backbone.get_file(id).await.is_ok());
+
+        let backbone = super::tests::backbone();
+        assert!(fetcher.fetch(id, &backbone, false).await.is_some());
+        assert!(backbone.get_file(id).await.is_err());
+    }
+
+    #[tokio::test]
     async fn fetch_without_backends_finds_nothing() {
-        assert!(fetcher(&[]).fetch(ShortGuid::new_random()).await.is_none());
+        assert!(
+            fetch(&fetcher(&[]), ShortGuid::new_random())
+                .await
+                .is_none()
+        );
     }
 }

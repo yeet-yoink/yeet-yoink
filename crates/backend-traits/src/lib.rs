@@ -12,6 +12,6 @@ mod registration;
 pub use backend_command::{BackendCommand, BackendCommandSendError, BackendCommandSender};
 pub use backend_info::BackendInfo;
 pub use distribute_file::{Backend, DistributeFile, DistributionError, StorageBackend};
-pub use fetch_file::{FetchError, FetchFile, FetchedFile};
+pub use fetch_file::{FetchError, FetchFile, FetchedContent, FetchedFile};
 pub use from_config::TryCreateFromConfig;
 pub use registration::{BackendRegistration, RegisterBackendError};
