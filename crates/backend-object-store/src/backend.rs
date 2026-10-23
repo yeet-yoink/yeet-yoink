@@ -18,7 +18,10 @@ use tokio_util::io::StreamReader;
 use tracing::{trace, warn};
 
 /// The custom object metadata key holding the serialized file metadata.
-pub const METADATA_ATTRIBUTE: &str = "yy-metadata";
+///
+/// Azure requires metadata names to be C# identifiers, and some proxies drop
+/// headers containing underscores, so the name is letters only.
+pub const METADATA_ATTRIBUTE: &str = "yymetadata";
 
 /// Files up to this size are uploaded in a single request; larger ones are
 /// streamed as multipart uploads.
