@@ -7,7 +7,9 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod backend;
+mod secret;
 
 pub use backend::{
     METADATA_ATTRIBUTE, ObjectStoreBackend, ObjectStoreSettings, client_options, retry_config,
 };
+pub use secret::read_secret;

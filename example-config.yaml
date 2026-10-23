@@ -40,6 +40,20 @@ backends:
       # Blob Storage has no per-blob expiry: the expiry is checked on fetch, and
       # a lifecycle management policy should delete old blobs.
       expiration_sec: 86400
+  s3:
+    - tag: "s3-1"
+      bucket: "yeet-yoink"
+      prefix: "files"
+      region: "eu-central-1"
+      # For S3-compatible stores such as MinIO, Ceph or SeaweedFS:
+      # endpoint: "https://s3.example.com"
+      # Without key files, credentials come from the environment, e.g. an EKS
+      # service account role.
+      # access_key_id_file: "/etc/yeet-yoink/s3/access-key-id"
+      # secret_access_key_file: "/etc/yeet-yoink/s3/secret-access-key"
+      # S3 has no per-object expiry: the expiry is checked on fetch, and a
+      # lifecycle rule on the bucket should delete old objects.
+      expiration_sec: 86400
 
 # Optional: find and gossip with other instances, see deploy/kubernetes/cluster.yaml.
 # Settings can be overridden by environment variables such as YY_CLUSTER__ADVERTISE_IP.

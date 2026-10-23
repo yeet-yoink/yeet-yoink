@@ -60,6 +60,8 @@ jobs:
         run: docker run -d -p 4443:4443 tustvold/fake-gcs-server -scheme http -backend memory -public-host localhost:4443
       - name: Start Azure Blob Storage emulator
         run: docker run -d -p 10000:10000 mcr.microsoft.com/azure-storage/azurite azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck
+      - name: Start S3-compatible store
+        run: docker run -d -p 8333:8333 -v "$PWD/docker/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro" chrislusf/seaweedfs server -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -dir=/data
       - name: Run tests
         run: cargo nextest run --workspace --verbose --all-features
         env:
@@ -67,6 +69,7 @@ jobs:
           YY_TEST_VALKEY: valkey://127.0.0.1:6379
           YY_TEST_GCS: http://localhost:4443
           YY_TEST_AZURITE: http://127.0.0.1:10000
+          YY_TEST_S3: http://127.0.0.1:8333
       # - name: Run doctests
       #   run: cargo test --doc --verbose --all-features
 
@@ -103,6 +106,8 @@ jobs:
         run: docker run -d -p 4443:4443 tustvold/fake-gcs-server -scheme http -backend memory -public-host localhost:4443
       - name: Start Azure Blob Storage emulator
         run: docker run -d -p 10000:10000 mcr.microsoft.com/azure-storage/azurite azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck
+      - name: Start S3-compatible store
+        run: docker run -d -p 8333:8333 -v "$PWD/docker/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro" chrislusf/seaweedfs server -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -dir=/data
       - name: Generate code coverage
         run: cargo llvm-cov nextest --all-features --workspace --lcov --output-path lcov.info
         env:
@@ -110,6 +115,7 @@ jobs:
           YY_TEST_VALKEY: valkey://127.0.0.1:6379
           YY_TEST_GCS: http://localhost:4443
           YY_TEST_AZURITE: http://127.0.0.1:10000
+          YY_TEST_S3: http://127.0.0.1:8333
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4.6.0
         with:

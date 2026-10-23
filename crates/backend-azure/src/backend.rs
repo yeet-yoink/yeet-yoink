@@ -91,15 +91,14 @@ impl AzureBackend {
     }
 }
 
-/// Reads a secret from a file, ignoring surrounding whitespace such as the
-/// trailing line break editors and `echo` add.
+/// Reads a credential from a file.
 fn read_secret(path: &Path) -> Result<String, AzureBackendConstructionError> {
-    std::fs::read_to_string(path)
-        .map(|secret| secret.trim().to_string())
-        .map_err(|source| AzureBackendConstructionError::ReadSecret {
+    backend_object_store::read_secret(path).map_err(|source| {
+        AzureBackendConstructionError::ReadSecret {
             path: path.to_path_buf(),
             source,
-        })
+        }
+    })
 }
 
 impl BackendInfo for AzureBackend {
@@ -233,16 +232,5 @@ mod tests {
                 Err(AzureBackendConstructionError::ReadSecret { .. })
             ));
         }
-    }
-
-    #[test]
-    fn secrets_are_trimmed() {
-        let dir = std::env::temp_dir().join(format!("yy-azure-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let file = dir.join("key");
-        std::fs::write(&file, "c2VjcmV0\n").unwrap();
-
-        assert_eq!(read_secret(&file).unwrap(), "c2VjcmV0");
-        std::fs::remove_dir_all(dir).ok();
     }
 }
