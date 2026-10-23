@@ -2,6 +2,8 @@
 // the `docsrs` configuration attribute is defined
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+#[cfg(feature = "azure")]
+pub mod azure;
 pub mod cluster;
 #[cfg(feature = "gcs")]
 pub mod gcs;
@@ -90,6 +92,11 @@ pub struct BackendsConfig {
     #[cfg(feature = "gcs")]
     #[serde(default)]
     pub gcs: Vec<gcs::GcsBackendConfig>,
+    /// Provides Azure Blob Storage specific configuration.
+    #[cfg_attr(docsrs, doc(cfg(feature = "azure")))]
+    #[cfg(feature = "azure")]
+    #[serde(default)]
+    pub azure: Vec<azure::AzureBackendConfig>,
 }
 
 impl AppConfig {
@@ -220,6 +227,22 @@ mod tests {
         assert_eq!(valkey.expiration_sec, Some(3600));
         assert_eq!(valkey.max_file_size_bytes, Some(64 * 1024 * 1024));
         assert_eq!(valkey.priority, 10);
+    }
+
+    #[test]
+    #[cfg(feature = "azure")]
+    fn example_config_deserializes_azure() {
+        let yaml = include_str!("../../../example-config.yaml");
+        let config: AppConfig = serde_yaml::from_str(yaml).expect("Failed to deserialize");
+
+        assert_eq!(config.backends.azure.len(), 1);
+        let azure = &config.backends.azure[0];
+        assert_eq!(azure.tag, "azure-1");
+        assert_eq!(azure.account.as_deref(), Some("mystorageaccount"));
+        assert_eq!(azure.container, "yeet-yoink");
+        assert_eq!(azure.prefix.as_deref(), Some("files"));
+        assert_eq!(azure.access_key_file, None);
+        assert_eq!(azure.expiration_sec, Some(86400));
     }
 
     #[test]

@@ -20,6 +20,8 @@ use tokio::sync::broadcast;
 use tracing::{debug, error, info, warn};
 
 use crate::backend_registry::{BackendFetcher, BackendRegistry};
+#[cfg(feature = "azure")]
+use backend_azure::AzureBackend;
 #[cfg(feature = "gcs")]
 use backend_gcs::GcsBackend;
 #[cfg(feature = "memcache")]
@@ -124,6 +126,13 @@ async fn main() -> ExitCode {
     // Cloud Storage backends make no request until they are used.
     #[cfg(feature = "gcs")]
     let registry = match registry.add_backends::<GcsBackend>(&cfg) {
+        Ok(registry) => registry,
+        Err(_) => return ExitCode::FAILURE,
+    };
+
+    // Azure Blob Storage backends make no request until they are used.
+    #[cfg(feature = "azure")]
+    let registry = match registry.add_backends::<AzureBackend>(&cfg) {
         Ok(registry) => registry,
         Err(_) => return ExitCode::FAILURE,
     };

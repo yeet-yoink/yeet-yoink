@@ -29,6 +29,17 @@ backends:
       expiration_sec: 86400
       # Optional; files are streamed in both directions, so there is no limit by default.
       # max_file_size_bytes: 1073741824
+  azure:
+    - tag: "azure-1"
+      account: "mystorageaccount"
+      container: "yeet-yoink"
+      prefix: "files"
+      # Without an access key or SAS token file, credentials come from the
+      # environment, e.g. AKS workload identity or a managed identity.
+      # access_key_file: "/etc/yeet-yoink/azure/access-key"
+      # Blob Storage has no per-blob expiry: the expiry is checked on fetch, and
+      # a lifecycle management policy should delete old blobs.
+      expiration_sec: 86400
 
 # Optional: find and gossip with other instances, see deploy/kubernetes/cluster.yaml.
 # Settings can be overridden by environment variables such as YY_CLUSTER__ADVERTISE_IP.
