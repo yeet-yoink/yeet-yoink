@@ -11,7 +11,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum_extra::TypedHeader;
 use axum_extra::headers::{ContentLength, ContentType};
-use backbone::{CompletionMode, NewFileError};
+use backbone::{CompletionMode, FinalizationError, NewFileError};
 use bytes::Buf;
 use file_distribution::FileHashes;
 use headers_content_md5::ContentMd5;
@@ -123,13 +123,7 @@ async fn do_yeet(
                     bytes_written += n;
                     data.advance(n);
                 }
-                Err(e) => {
-                    return Ok((
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        format!("Failed to write to temporary file: {e}"),
-                    )
-                        .into_response());
-                }
+                Err(e) => return Ok(map_write_error_to_response(e)),
             }
         }
 
@@ -146,17 +140,11 @@ async fn do_yeet(
     }
 
     // The file was already synced to disk in the last iteration, so
-    // we can skip the sync here.
-    // TODO: Add server-side validation of MD5 value if header is present.
+    // we can skip the sync here. Finalizing checks the content against the
+    // announced length and MD5, if any.
     let write_result = match writer.finalize(CompletionMode::NoSync).await {
         Ok(write_result) => write_result,
-        Err(e) => {
-            return Ok((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to complete writing to temporary file: {e}"),
-            )
-                .into_response());
-        }
+        Err(e) => return Ok(map_finalization_error_to_response(e)),
     };
 
     debug!(
@@ -190,6 +178,47 @@ async fn do_yeet(
         .or_insert(HeaderValue::from_str(&id).expect("invalid ID input provided"));
 
     Ok(response)
+}
+
+/// Maps a failed write to a response. Sending more than the announced
+/// `Content-Length` is the client's mistake; anything else is ours.
+fn map_write_error_to_response(error: std::io::Error) -> Response {
+    if error.kind() == std::io::ErrorKind::InvalidInput {
+        return (
+            StatusCode::BAD_REQUEST,
+            "The request body is longer than its Content-Length",
+        )
+            .into_response();
+    }
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        format!("Failed to write to temporary file: {error}"),
+    )
+        .into_response()
+}
+
+/// Maps a failed finalization to a response. Content that does not match its
+/// announced length or MD5 is the client's mistake; anything else is ours.
+fn map_finalization_error_to_response(error: FinalizationError) -> Response {
+    match error {
+        FinalizationError::InvalidFileLength(actual, expected) => (
+            StatusCode::BAD_REQUEST,
+            format!(
+                "The request body is {actual} bytes long, but its Content-Length is {expected}"
+            ),
+        )
+            .into_response(),
+        FinalizationError::IntegrityCheckFailed(expected, actual) => (
+            StatusCode::BAD_REQUEST,
+            format!("The request body has MD5 {actual}, but its Content-MD5 is {expected}"),
+        )
+            .into_response(),
+        e => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to complete writing to temporary file: {e}"),
+        )
+            .into_response(),
+    }
 }
 
 #[derive(Serialize)]
@@ -246,5 +275,99 @@ fn map_new_file_error_to_response(value: NewFileError) -> Response {
                 .with_value("id", id.to_string())
                 .into_response()
         }
+    }
+}
+
+#[cfg(test)]
+mod endpoint_tests {
+    use crate::test_support::{send, test_app};
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use base64::Engine;
+
+    /// The base64-encoded MD5 of `abc`.
+    const ABC_MD5: &str = "kAFQmDzST7DWlj99KOF/cg==";
+
+    fn yeet() -> axum::http::request::Builder {
+        Request::post("/yeet").header("content-type", "text/plain")
+    }
+
+    async fn status_of(request: Request<Body>) -> (StatusCode, String) {
+        let (status, _, body) = send(&test_app(true).state, request).await;
+        (status, String::from_utf8_lossy(&body).into_owned())
+    }
+
+    #[tokio::test]
+    async fn upload_is_accepted() {
+        let app = test_app(true);
+        let request = yeet()
+            .header("content-length", "3")
+            .header("content-md5", ABC_MD5)
+            .body(Body::from("abc"))
+            .expect("Invalid request");
+
+        let (status, headers, body) = send(&app.state, request).await;
+
+        assert_eq!(status, StatusCode::CREATED);
+        let response: serde_json::Value = serde_json::from_slice(&body).expect("Invalid JSON");
+        assert_eq!(response["file_size_bytes"], 3);
+        let id = headers
+            .get("yy-id")
+            .and_then(|v| v.to_str().ok())
+            .expect("Missing ID header");
+        assert_eq!(response["id"], id);
+    }
+
+    #[tokio::test]
+    async fn md5_mismatch_is_a_client_error() {
+        let wrong_md5 = base64::engine::general_purpose::STANDARD.encode([0u8; 16]);
+        let request = yeet()
+            .header("content-md5", wrong_md5)
+            .body(Body::from("abc"))
+            .expect("Invalid request");
+
+        let (status, body) = status_of(request).await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body.contains("Content-MD5"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn body_shorter_than_announced_is_a_client_error() {
+        let request = yeet()
+            .header("content-length", "5")
+            .body(Body::from("abc"))
+            .expect("Invalid request");
+
+        let (status, body) = status_of(request).await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body.contains("Content-Length"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn body_longer_than_announced_is_a_client_error() {
+        let request = yeet()
+            .header("content-length", "2")
+            .body(Body::from("abc"))
+            .expect("Invalid request");
+
+        let (status, body) = status_of(request).await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body.contains("Content-Length"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn rejected_upload_is_given_no_id() {
+        let app = test_app(true);
+        let wrong_md5 = base64::engine::general_purpose::STANDARD.encode([0u8; 16]);
+        let request = yeet()
+            .header("content-md5", wrong_md5)
+            .body(Body::from("abc"))
+            .expect("Invalid request");
+        let (status, headers, _) = send(&app.state, request).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(headers.get("yy-id").is_none());
     }
 }

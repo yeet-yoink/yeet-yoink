@@ -38,6 +38,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   therefore no longer limit the file size by default
   ([#122](https://github.com/yeet-yoink/yeet-yoink/issues/122)).
 
+### Fixed
+
+- `/yeet` answers `400 Bad Request` instead of `500 Internal Server Error` when the request
+  body does not match its `Content-MD5` or `Content-Length`, or is longer than announced.
+
 ## [0.0.1] - 2023-06-25
 
 ### Added

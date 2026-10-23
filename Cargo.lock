@@ -3927,6 +3927,7 @@ dependencies = [
  "problemdetails",
  "rendezvous",
  "serde",
+ "serde_json",
  "serde_yaml",
  "shared-files",
  "shortguid",

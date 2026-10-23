@@ -74,8 +74,10 @@ impl FileWriterGuard {
                 && self.file_size > expected_size
             {
                 self.fail_if_not_already_closed();
+                // The caller sent more than it announced, rather than the
+                // write failing.
                 return Err(std::io::Error::new(
-                    ErrorKind::UnexpectedEof,
+                    ErrorKind::InvalidInput,
                     "Attempted to write more bytes than announced",
                 ));
             }
