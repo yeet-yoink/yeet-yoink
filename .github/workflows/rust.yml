@@ -10,6 +10,8 @@ on:
       - 'src/**'
       - 'crates/**'
       - 'bins/**'
+      - 'proto/**'
+      - 'docker/**'
       - '.github/workflows/rust.yml'
   pull_request:
     branches: [ "main" ]
@@ -19,7 +21,17 @@ on:
       - 'src/**'
       - 'crates/**'
       - 'bins/**'
+      - 'proto/**'
+      - 'docker/**'
       - '.github/workflows/rust.yml'
+
+permissions:
+  contents: read # checking out the sources
+
+# Superseded runs of a pull request are cancelled; runs on main are not.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -30,11 +42,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     services:
       memcached:
-        image: memcached:alpine
+        # Images are pinned by digest; update them deliberately.
+        image: memcached:alpine@sha256:6d687bc26426d092694743054fc674fc54d3c161fefa1ad20b54192f8580a8c1
         ports:
           - 11211:11211
       valkey:
-        image: valkey/valkey:alpine
+        image: valkey/valkey:alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
         ports:
           - 6379:6379
     strategy:
@@ -44,24 +57,29 @@ jobs:
           # - macos-latest
           # - windows-latest
     steps:
-      - name: Install Protocol Buffers Compiler
-        uses: arduino/setup-protoc@v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/checkout@v4
+          persist-credentials: false
+      - name: Install Protocol Buffers Compiler
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: protoc
       - name: Check format
         run: cargo fmt --check
       - name: Build
         run: cargo build --workspace --verbose
-      - uses: taiki-e/install-action@nextest
+      - name: Install nextest
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-nextest
       - name: Start Cloud Storage emulator
         # Service containers cannot take arguments. The fork supports the XML
         # API uploads object_store uses; see fsouza/fake-gcs-server#1164.
-        run: docker run -d -p 4443:4443 tustvold/fake-gcs-server -scheme http -backend memory -public-host localhost:4443
+        run: docker run -d -p 4443:4443 tustvold/fake-gcs-server@sha256:dcd3aeacc07c731f1336e90c2889be2af8626ae993ee1fe2c0ba042ebbeb5a04 -scheme http -backend memory -public-host localhost:4443
       - name: Start Azure Blob Storage emulator
-        run: docker run -d -p 10000:10000 mcr.microsoft.com/azure-storage/azurite azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck
+        run: docker run -d -p 10000:10000 mcr.microsoft.com/azure-storage/azurite@sha256:830430c1da1a2d537e08f3e6764dd1f5ae00cf0346bcaf625b968ec3f0971fd5 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck
       - name: Start S3-compatible store
-        run: docker run -d -p 8333:8333 -v "$PWD/docker/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro" chrislusf/seaweedfs server -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -dir=/data
+        run: docker run -d -p 8333:8333 -v "$PWD/docker/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro" chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d server -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -dir=/data
       - name: Run tests
         run: cargo nextest run --workspace --verbose --all-features
         env:
@@ -78,36 +96,36 @@ jobs:
     runs-on: ubuntu-latest
     services:
       memcached:
-        image: memcached:alpine
+        # Images are pinned by digest; update them deliberately.
+        image: memcached:alpine@sha256:6d687bc26426d092694743054fc674fc54d3c161fefa1ad20b54192f8580a8c1
         ports:
           - 11211:11211
       valkey:
-        image: valkey/valkey:alpine
+        image: valkey/valkey:alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
         ports:
           - 6379:6379
-    env:
-      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install Protocol Buffers Compiler
-        uses: arduino/setup-protoc@v3
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: dtolnay/rust-toolchain@stable
+          tool: protoc
+      - name: Install coverage instrumentation
+        run: rustup component add llvm-tools-preview
+      - name: Install cargo-llvm-cov and nextest
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
-          components: llvm-tools-preview
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
-      - name: Install nextest
-        uses: taiki-e/install-action@nextest
-      - uses: actions/checkout@v4
+          tool: cargo-llvm-cov,cargo-nextest
       - name: Start Cloud Storage emulator
         # Service containers cannot take arguments. The fork supports the XML
         # API uploads object_store uses; see fsouza/fake-gcs-server#1164.
-        run: docker run -d -p 4443:4443 tustvold/fake-gcs-server -scheme http -backend memory -public-host localhost:4443
+        run: docker run -d -p 4443:4443 tustvold/fake-gcs-server@sha256:dcd3aeacc07c731f1336e90c2889be2af8626ae993ee1fe2c0ba042ebbeb5a04 -scheme http -backend memory -public-host localhost:4443
       - name: Start Azure Blob Storage emulator
-        run: docker run -d -p 10000:10000 mcr.microsoft.com/azure-storage/azurite azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck
+        run: docker run -d -p 10000:10000 mcr.microsoft.com/azure-storage/azurite@sha256:830430c1da1a2d537e08f3e6764dd1f5ae00cf0346bcaf625b968ec3f0971fd5 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck
       - name: Start S3-compatible store
-        run: docker run -d -p 8333:8333 -v "$PWD/docker/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro" chrislusf/seaweedfs server -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -dir=/data
+        run: docker run -d -p 8333:8333 -v "$PWD/docker/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro" chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d server -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -dir=/data
       - name: Generate code coverage
         run: cargo llvm-cov nextest --all-features --workspace --lcov --output-path lcov.info
         env:
@@ -117,7 +135,7 @@ jobs:
           YY_TEST_AZURITE: http://127.0.0.1:10000
           YY_TEST_S3: http://127.0.0.1:8333
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4.6.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: lcov.info
