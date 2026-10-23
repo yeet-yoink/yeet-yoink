@@ -41,6 +41,9 @@ pub struct ClusterConfig {
     pub listen_addr: SocketAddr,
     /// The IP address other instances reach this one on, e.g. the pod IP.
     /// Required when listening on an unspecified address such as `0.0.0.0`.
+    ///
+    /// Gossip from an address other than the one an instance advertises is
+    /// dropped, so instances must reach each other without NAT in between.
     #[serde(default)]
     pub advertise_ip: Option<IpAddr>,
     /// `host:port` pairs of instances to contact first. Host names are

@@ -158,7 +158,7 @@ impl Cluster {
         };
         let seeds = config.seed_nodes.clone();
         let gossip_interval = config.gossip_interval;
-        let transport = SecureUdpTransport::new(settings.key);
+        let transport = SecureUdpTransport::new(settings.key, settings.advertise_addr);
         let handle =
             Arc::new(spawn_chitchat(config, settings.info.key_values(), &transport).await?);
         let seed_refresh = tokio::spawn(refresh_seeds(handle.clone(), seeds, resolver));

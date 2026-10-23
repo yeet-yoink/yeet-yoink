@@ -1,25 +1,35 @@
 //! An encrypted, authenticated UDP transport for chitchat gossip.
 //!
 //! Every datagram is encrypted with AES-256-GCM under a key derived from a
-//! pre-shared secret and the cluster ID. Datagrams that fail authentication
-//! (a different secret or cluster, tampering) or that are older than
-//! [`MAX_MESSAGE_AGE`] are dropped. Within that window a replayed datagram is
-//! accepted again; chitchat ignores state it has already seen, so a replay
-//! cannot roll anything back.
+//! pre-shared secret and the cluster ID. A datagram is dropped if it
+//!
+//! - fails authentication (a different secret or cluster, tampering),
+//! - is older, or further in the future, than [`MAX_MESSAGE_AGE`],
+//! - arrives from another address than the sender's gossip address it
+//!   carries, so a captured datagram cannot be replayed from a forged source
+//!   to make a member send its much larger reply elsewhere, or
+//! - repeats a fragment already received from that sender.
+//!
+//! Comparing the source with the carried address requires that members see
+//! each other's gossip addresses unchanged, without NAT in between, as is the
+//! case for pods talking to pods in Kubernetes.
 //!
 //! chitchat fills datagrams up to the largest UDP payload. Since encryption
 //! adds a few bytes, a message is split into fragments that are each
 //! encrypted and authenticated on their own, so only authenticated fragments
-//! are ever buffered for reassembly.
+//! of a verified sender are ever buffered for reassembly.
 //!
 //! ## Wire format
 //!
 //! ```text
 //! datagram  = version (1) || nonce (12) || AES-256-GCM(fragment) || tag (16)
-//! fragment  = sent_at_unix_ms (8) || message_id (8) || index (1) || count (1) || chunk
+//! fragment  = sent_at_unix_ms (8) || sender_ip (16) || sender_port (2)
+//!             || message_id (8) || index (1) || count (1) || chunk
 //! nonce     = per-process random prefix (8) || counter (4)
 //! AAD       = version
 //! ```
+//!
+//! IPv4 sender addresses are carried as IPv4-mapped IPv6 addresses.
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -31,19 +41,19 @@ use hkdf::Hkdf;
 use sha2::Sha256;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tracing::{debug, warn};
 
 /// The version of the wire format.
-const WIRE_VERSION: u8 = 1;
+const WIRE_VERSION: u8 = 2;
 
 /// The largest UDP payload, which is also what chitchat fills datagrams up to.
 const MAX_DATAGRAM_SIZE: usize = 65_507;
 
 const NONCE_LEN: usize = 12;
 const TAG_LEN: usize = 16;
-const FRAGMENT_HEADER_LEN: usize = 8 + 8 + 1 + 1;
+const FRAGMENT_HEADER_LEN: usize = 8 + 16 + 2 + 8 + 1 + 1;
 
 /// The bytes a datagram carries in addition to its chunk of the message.
 const OVERHEAD: usize = 1 + NONCE_LEN + TAG_LEN + FRAGMENT_HEADER_LEN;
@@ -56,15 +66,22 @@ const MAX_CHUNK_SIZE: usize = MAX_DATAGRAM_SIZE - OVERHEAD;
 const MAX_FRAGMENTS: u8 = 2;
 
 /// How old, or how far in the future, a datagram may be before it is dropped.
-/// Bounds the window in which a captured datagram can be replayed, and
-/// tolerates clock differences between nodes.
-pub const MAX_MESSAGE_AGE: Duration = Duration::from_secs(60);
+/// Bounds how long received fragments must be remembered to recognize
+/// replays, and tolerates clock differences between nodes.
+pub const MAX_MESSAGE_AGE: Duration = Duration::from_secs(30);
+
+/// How many recently received fragments are remembered at most. Beyond that,
+/// new datagrams are dropped rather than possibly accepting a replay.
+const MAX_REMEMBERED_FRAGMENTS: usize = 65_536;
 
 /// How long fragments of an incomplete message are kept.
 const REASSEMBLY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// How many incomplete messages are kept at most.
 const MAX_PENDING_MESSAGES: usize = 256;
+
+/// How many incomplete messages are kept at most per sender.
+const MAX_PENDING_MESSAGES_PER_SENDER: usize = 8;
 
 /// The smallest accepted secret, in bytes.
 const MIN_SECRET_LEN: usize = 32;
@@ -104,11 +121,16 @@ pub enum ClusterKeyError {
 /// A chitchat transport that encrypts and authenticates every datagram.
 pub struct SecureUdpTransport {
     key: ClusterKey,
+    /// The gossip address peers see this instance's datagrams coming from.
+    advertise_addr: SocketAddr,
 }
 
 impl SecureUdpTransport {
-    pub fn new(key: ClusterKey) -> Self {
-        Self { key }
+    pub fn new(key: ClusterKey, advertise_addr: SocketAddr) -> Self {
+        Self {
+            key,
+            advertise_addr,
+        }
     }
 }
 
@@ -120,7 +142,8 @@ impl Transport for SecureUdpTransport {
             .with_context(|| format!("failed to bind to {listen_addr}/UDP for gossip"))?;
         Ok(Box::new(SecureUdpSocket {
             socket,
-            sealer: Sealer::new(self.key.clone()),
+            sealer: Sealer::new(self.key.clone(), self.advertise_addr),
+            replays: ReplayGuard::default(),
             reassembly: Reassembly::default(),
             buf_recv: vec![0; MAX_DATAGRAM_SIZE + 1].into_boxed_slice(),
         }))
@@ -130,6 +153,7 @@ impl Transport for SecureUdpTransport {
 struct SecureUdpSocket {
     socket: tokio::net::UdpSocket,
     sealer: Sealer,
+    replays: ReplayGuard,
     reassembly: Reassembly,
     buf_recv: Box<[u8]>,
 }
@@ -157,7 +181,16 @@ impl Socket for SecureUdpSocket {
                 debug!(from = %from, len, "Dropped a gossip datagram that failed authentication");
                 continue;
             };
-            let Some(payload) = self.reassembly.add(from, fragment, Instant::now()) else {
+            if canonical(from) != fragment.sender {
+                debug!(from = %from, sender = %fragment.sender, "Dropped a gossip datagram from another address than its sender's");
+                continue;
+            }
+            let now = Instant::now();
+            if !self.replays.first_seen(&fragment, now) {
+                debug!(from = %from, "Dropped a repeated gossip datagram");
+                continue;
+            }
+            let Some(payload) = self.reassembly.add(fragment, now) else {
                 continue;
             };
             match ChitchatMessage::deserialize(&mut &payload[..]) {
@@ -171,14 +204,17 @@ impl Socket for SecureUdpSocket {
 /// Encrypts messages into datagrams and decrypts datagrams into fragments.
 struct Sealer {
     key: ClusterKey,
+    /// The gossip address of this instance, carried in every fragment.
+    sender: SocketAddr,
     nonces: NonceSequence,
     next_message_id: u64,
 }
 
 impl Sealer {
-    fn new(key: ClusterKey) -> Self {
+    fn new(key: ClusterKey, sender: SocketAddr) -> Self {
         Self {
             key,
+            sender: canonical(sender),
             nonces: NonceSequence::new(),
             next_message_id: rand::random(),
         }
@@ -202,6 +238,8 @@ impl Sealer {
             .map(|(index, chunk)| {
                 let mut plaintext = Vec::with_capacity(FRAGMENT_HEADER_LEN + chunk.len());
                 plaintext.extend_from_slice(&sent_at_unix_ms.to_be_bytes());
+                plaintext.extend_from_slice(&ipv6(self.sender.ip()).octets());
+                plaintext.extend_from_slice(&self.sender.port().to_be_bytes());
                 plaintext.extend_from_slice(&message_id.to_be_bytes());
                 plaintext.push(index as u8);
                 plaintext.push(count);
@@ -252,12 +290,16 @@ impl Sealer {
         if now_unix_ms.abs_diff(sent_at) > MAX_MESSAGE_AGE.as_millis() as u64 {
             return None;
         }
-        let message_id = u64::from_be_bytes(plaintext[8..16].try_into().ok()?);
-        let (index, count) = (plaintext[16], plaintext[17]);
+        let ip: [u8; 16] = plaintext[8..24].try_into().ok()?;
+        let port = u16::from_be_bytes(plaintext[24..26].try_into().ok()?);
+        let sender = canonical(SocketAddr::new(IpAddr::V6(Ipv6Addr::from(ip)), port));
+        let message_id = u64::from_be_bytes(plaintext[26..34].try_into().ok()?);
+        let (index, count) = (plaintext[34], plaintext[35]);
         if count == 0 || count > MAX_FRAGMENTS || index >= count {
             return None;
         }
         Some(Fragment {
+            sender,
             message_id,
             index,
             count,
@@ -299,10 +341,43 @@ impl NonceSequence {
 /// An authenticated piece of a message.
 #[derive(Debug, PartialEq, Eq)]
 struct Fragment {
+    /// The gossip address of the sender, as authenticated by the key.
+    sender: SocketAddr,
     message_id: u64,
     index: u8,
     count: u8,
     chunk: Vec<u8>,
+}
+
+/// Remembers recently received fragments to recognize replays.
+#[derive(Default)]
+struct ReplayGuard {
+    seen: HashMap<(SocketAddr, u64, u8), Instant>,
+}
+
+impl ReplayGuard {
+    /// Records a fragment and tells whether it was seen for the first time.
+    fn first_seen(&mut self, fragment: &Fragment, now: Instant) -> bool {
+        // Fragments older than this are rejected for their age anyway; the
+        // window covers datagrams sent up to MAX_MESSAGE_AGE in the future.
+        let horizon = MAX_MESSAGE_AGE * 2;
+        if self.seen.len() >= MAX_REMEMBERED_FRAGMENTS {
+            self.seen
+                .retain(|_, seen_at| now.duration_since(*seen_at) < horizon);
+            if self.seen.len() >= MAX_REMEMBERED_FRAGMENTS {
+                warn!("Too many recent gossip fragments to recognize replays; dropping one");
+                return false;
+            }
+        }
+        let key = (fragment.sender, fragment.message_id, fragment.index);
+        match self.seen.get(&key) {
+            Some(seen_at) if now.duration_since(*seen_at) < horizon => false,
+            _ => {
+                self.seen.insert(key, now);
+                true
+            }
+        }
+    }
 }
 
 /// Collects the fragments of split messages.
@@ -319,19 +394,26 @@ struct Pending {
 impl Reassembly {
     /// Adds a fragment and returns the whole message once all of its
     /// fragments have arrived.
-    fn add(&mut self, from: SocketAddr, fragment: Fragment, now: Instant) -> Option<Vec<u8>> {
+    fn add(&mut self, fragment: Fragment, now: Instant) -> Option<Vec<u8>> {
         if fragment.count == 1 {
             return Some(fragment.chunk);
         }
 
         self.pending
             .retain(|_, pending| now.duration_since(pending.started) < REASSEMBLY_TIMEOUT);
-        if self.pending.len() >= MAX_PENDING_MESSAGES {
-            warn!("Too many incomplete gossip messages; dropping a fragment from {from}");
-            return None;
+
+        let sender = fragment.sender;
+        let key = (sender, fragment.message_id);
+        if !self.pending.contains_key(&key) {
+            let from_sender = self.pending.keys().filter(|(s, _)| *s == sender).count();
+            if from_sender >= MAX_PENDING_MESSAGES_PER_SENDER
+                || self.pending.len() >= MAX_PENDING_MESSAGES
+            {
+                warn!("Too many incomplete gossip messages; dropping a fragment from {sender}");
+                return None;
+            }
         }
 
-        let key = (from, fragment.message_id);
         let pending = self.pending.entry(key).or_insert_with(|| Pending {
             chunks: vec![None; fragment.count as usize],
             started: now,
@@ -351,6 +433,26 @@ impl Reassembly {
     }
 }
 
+/// Maps an address to the IPv6 form it is carried in.
+fn ipv6(ip: IpAddr) -> Ipv6Addr {
+    match ip {
+        IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+        IpAddr::V6(ip) => ip,
+    }
+}
+
+/// Normalizes IPv4-mapped IPv6 addresses to IPv4, so that addresses compare
+/// equal however a socket reports them.
+fn canonical(addr: SocketAddr) -> SocketAddr {
+    match addr.ip() {
+        IpAddr::V6(ip) => match ip.to_ipv4_mapped() {
+            Some(ip) => SocketAddr::new(IpAddr::V4(ip), addr.port()),
+            None => addr,
+        },
+        IpAddr::V4(_) => addr,
+    }
+}
+
 fn now_unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -364,12 +466,19 @@ mod tests {
     const SECRET: &[u8] = b"0123456789abcdef0123456789abcdef";
     const NOW: u64 = 1_800_000_000_000;
 
-    fn sealer(secret: &[u8], cluster_id: &str) -> Sealer {
-        Sealer::new(ClusterKey::derive(secret, cluster_id).expect("Invalid key"))
-    }
-
     fn addr() -> SocketAddr {
         "10.0.0.1:7946".parse().unwrap()
+    }
+
+    fn other_addr() -> SocketAddr {
+        "10.0.0.2:7946".parse().unwrap()
+    }
+
+    fn sealer(secret: &[u8], cluster_id: &str) -> Sealer {
+        Sealer::new(
+            ClusterKey::derive(secret, cluster_id).expect("Invalid key"),
+            addr(),
+        )
     }
 
     /// Seals and reopens a message, reassembling fragments.
@@ -379,7 +488,7 @@ mod tests {
         for datagram in sender.seal(message, NOW) {
             assert!(datagram.len() <= MAX_DATAGRAM_SIZE);
             let fragment = receiver.open(&datagram, NOW)?;
-            result = reassembly.add(addr(), fragment, Instant::now());
+            result = reassembly.add(fragment, Instant::now());
         }
         result
     }
@@ -413,6 +522,22 @@ mod tests {
     }
 
     #[test]
+    fn fragment_carries_the_sender_address() {
+        for sender_addr in ["10.0.0.1:7946", "[fd00::1]:7946", "[::ffff:10.0.0.1]:7946"] {
+            let sender_addr: SocketAddr = sender_addr.parse().unwrap();
+            let key = ClusterKey::derive(SECRET, "cluster").unwrap();
+            let mut sender = Sealer::new(key.clone(), sender_addr);
+            let receiver = Sealer::new(key, other_addr());
+
+            let datagram = sender.seal(b"hello", NOW).remove(0);
+            let fragment = receiver.open(&datagram, NOW).expect("Not opened");
+            assert_eq!(fragment.sender, canonical(sender_addr));
+        }
+        // IPv4-mapped addresses compare equal to their IPv4 form.
+        assert_eq!(canonical("[::ffff:10.0.0.1]:7946".parse().unwrap()), addr());
+    }
+
+    #[test]
     fn largest_message_is_split_and_reassembled() {
         let mut sender = sealer(SECRET, "cluster");
         let receiver = sealer(SECRET, "cluster");
@@ -433,12 +558,9 @@ mod tests {
 
         let mut reassembly = Reassembly::default();
         let first = receiver.open(&datagrams[0], NOW).unwrap();
-        assert_eq!(reassembly.add(addr(), first, Instant::now()), None);
+        assert_eq!(reassembly.add(first, Instant::now()), None);
         let second = receiver.open(&datagrams[1], NOW).unwrap();
-        assert_eq!(
-            reassembly.add(addr(), second, Instant::now()),
-            Some(message)
-        );
+        assert_eq!(reassembly.add(second, Instant::now()), Some(message));
     }
 
     #[test]
@@ -484,6 +606,48 @@ mod tests {
     }
 
     #[test]
+    fn repeated_fragments_are_recognized() {
+        let mut sender = sealer(SECRET, "cluster");
+        let receiver = sealer(SECRET, "cluster");
+        let datagram = sender.seal(b"hello", NOW).remove(0);
+        let next = sender.seal(b"hello", NOW).remove(0);
+        let now = Instant::now();
+
+        let mut replays = ReplayGuard::default();
+        let fragment = receiver.open(&datagram, NOW).unwrap();
+        assert!(replays.first_seen(&fragment, now));
+        assert!(!replays.first_seen(&fragment, now + Duration::from_secs(1)));
+
+        // The same content sent again is a new message, not a replay.
+        let fragment = receiver.open(&next, NOW).unwrap();
+        assert!(replays.first_seen(&fragment, now));
+    }
+
+    #[test]
+    fn replay_memory_is_bounded() {
+        let fragment = |message_id| Fragment {
+            sender: addr(),
+            message_id,
+            index: 0,
+            count: 1,
+            chunk: Vec::new(),
+        };
+        let now = Instant::now();
+        let mut replays = ReplayGuard::default();
+        for message_id in 0..MAX_REMEMBERED_FRAGMENTS as u64 {
+            assert!(replays.first_seen(&fragment(message_id), now));
+        }
+
+        // Full of recent fragments: new ones are dropped rather than risked.
+        let next = fragment(MAX_REMEMBERED_FRAGMENTS as u64);
+        assert!(!replays.first_seen(&next, now));
+
+        // Once they are old enough to be rejected anyway, there is room again.
+        let later = now + MAX_MESSAGE_AGE * 2;
+        assert!(replays.first_seen(&next, later));
+    }
+
+    #[test]
     fn nonces_do_not_repeat() {
         let mut nonces = NonceSequence::new();
         let first = nonces.next();
@@ -512,27 +676,90 @@ mod tests {
 
         let mut reassembly = Reassembly::default();
         let first = receiver.open(&datagrams[0], NOW).unwrap();
-        assert_eq!(reassembly.add(addr(), first, start), None);
+        assert_eq!(reassembly.add(first, start), None);
 
         // The second fragment arrives too late; its message is incomplete.
         let second = receiver.open(&datagrams[1], NOW).unwrap();
         let late = start + REASSEMBLY_TIMEOUT + Duration::from_millis(1);
-        assert_eq!(reassembly.add(addr(), second, late), None);
+        assert_eq!(reassembly.add(second, late), None);
         assert!(reassembly.pending.len() <= 1);
     }
 
     #[test]
-    fn fragments_of_different_senders_are_kept_apart() {
-        let mut sender = sealer(SECRET, "cluster");
-        let receiver = sealer(SECRET, "cluster");
-        let message = vec![3u8; MAX_DATAGRAM_SIZE];
-        let datagrams = sender.seal(&message, NOW);
-        let other: SocketAddr = "10.0.0.2:7946".parse().unwrap();
+    fn one_sender_cannot_fill_the_reassembly_table() {
+        let key = ClusterKey::derive(SECRET, "cluster").unwrap();
+        let mut flooder = Sealer::new(key.clone(), addr());
+        let mut honest = Sealer::new(key.clone(), other_addr());
+        let receiver = Sealer::new(key, "10.0.0.3:7946".parse().unwrap());
+        let message = vec![5u8; MAX_DATAGRAM_SIZE];
+        let now = Instant::now();
 
         let mut reassembly = Reassembly::default();
-        let first = receiver.open(&datagrams[0], NOW).unwrap();
-        assert_eq!(reassembly.add(addr(), first, Instant::now()), None);
-        let second = receiver.open(&datagrams[1], NOW).unwrap();
-        assert_eq!(reassembly.add(other, second, Instant::now()), None);
+        for _ in 0..MAX_PENDING_MESSAGES_PER_SENDER + 4 {
+            let first = flooder.seal(&message, NOW).remove(0);
+            reassembly.add(receiver.open(&first, NOW).unwrap(), now);
+        }
+        assert_eq!(reassembly.pending.len(), MAX_PENDING_MESSAGES_PER_SENDER);
+
+        // Another sender still gets its split messages through.
+        let datagrams = honest.seal(&message, NOW);
+        assert_eq!(
+            reassembly.add(receiver.open(&datagrams[0], NOW).unwrap(), now),
+            None
+        );
+        assert_eq!(
+            reassembly.add(receiver.open(&datagrams[1], NOW).unwrap(), now),
+            Some(message)
+        );
+    }
+
+    fn free_addr() -> SocketAddr {
+        std::net::UdpSocket::bind("127.0.0.1:0")
+            .and_then(|socket| socket.local_addr())
+            .expect("No free port")
+    }
+
+    /// A datagram from another address than the sender's it carries is
+    /// dropped, so a captured request cannot be replayed from a forged source
+    /// to make a member send its reply elsewhere.
+    #[tokio::test]
+    async fn datagram_from_another_address_is_dropped() {
+        let key = ClusterKey::derive(SECRET, "cluster").unwrap();
+        let (receiver_addr, sender_addr) = (free_addr(), free_addr());
+        let mut receiver = SecureUdpTransport::new(key.clone(), receiver_addr)
+            .open(receiver_addr)
+            .await
+            .unwrap();
+        let mut sender = SecureUdpTransport::new(key.clone(), sender_addr)
+            .open(sender_addr)
+            .await
+            .unwrap();
+
+        // A genuine datagram arrives.
+        sender
+            .send(receiver_addr, ChitchatMessage::BadCluster)
+            .await
+            .unwrap();
+        let (from, message) = tokio::time::timeout(Duration::from_secs(5), receiver.recv())
+            .await
+            .expect("Genuine datagram not received")
+            .unwrap();
+        assert_eq!(from, sender_addr);
+        assert!(matches!(message, ChitchatMessage::BadCluster));
+
+        // An authentic datagram naming the sender, sent from elsewhere, does not.
+        let datagram = Sealer::new(key, sender_addr)
+            .seal(
+                &ChitchatMessage::BadCluster.serialize_to_vec(),
+                now_unix_ms(),
+            )
+            .remove(0);
+        let forger = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        forger.send_to(&datagram, receiver_addr).await.unwrap();
+        let received = tokio::time::timeout(Duration::from_millis(300), receiver.recv()).await;
+        assert!(
+            received.is_err(),
+            "Datagram from a forged source was accepted"
+        );
     }
 }
