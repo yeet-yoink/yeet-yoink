@@ -1,7 +1,7 @@
 use crate::connection_string::MemcacheConnectionStringWrapper;
 use app_config::{
     AppConfig,
-    memcache::{DEFAULT_EXPIRATION, MemcacheBackendConfig},
+    memcache::{DEFAULT_EXPIRATION, DEFAULT_MAX_FILE_SIZE_BYTES, MemcacheBackendConfig},
 };
 use async_trait::async_trait;
 use backend_traits::{
@@ -30,6 +30,8 @@ pub struct MemcacheBackend {
     pool: Pool<MemcacheConnectionManager>,
     /// The expiration time for stored entries.
     expiration_secs: u32,
+    /// The largest file size accepted for storage, or `None` for no limit.
+    max_file_size: Option<u64>,
 }
 
 impl MemcacheBackend {
@@ -49,10 +51,20 @@ impl MemcacheBackend {
             .map_or(DEFAULT_EXPIRATION, |secs| Duration::from_secs(secs as _))
             .as_secs()
             .min(u32::MAX as _) as u32;
+
+        // A limit of 0 disables the size check.
+        let max_file_size = Some(
+            config
+                .max_file_size_bytes
+                .unwrap_or(DEFAULT_MAX_FILE_SIZE_BYTES),
+        )
+        .filter(|&max| max != 0);
+
         Ok(Self {
             tag: config.tag.clone(),
             pool,
             expiration_secs,
+            max_file_size,
         })
     }
 }
@@ -63,14 +75,17 @@ impl DistributeFile for MemcacheBackend {
         &self.tag
     }
 
+    fn max_file_size(&self) -> Option<u64> {
+        self.max_file_size
+    }
+
     async fn distribute_file(
         &self,
         id: ShortGuid,
         summary: Arc<WriteSummary>,
         file_provider: FileProvider,
     ) -> Result<(), DistributionError> {
-        // TODO: Sanity check the file size - don't store if too large.
-
+        // The backend registry skips files above max_file_size().
         let expiration = self.expiration_secs;
         let file = file_provider.get_file(id).await?;
         let client = self.pool.get().unwrap();

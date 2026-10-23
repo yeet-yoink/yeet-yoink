@@ -5,3 +5,5 @@ backends:
     - tag: "memcache-1"
       connection_string: "memcache://127.0.0.1:11211?timeout=10&tcp_nodelay=true"
       expiration_sec: 500
+      # Largest file stored in this backend; keep below memcached's -I limit. 0 disables the check.
+      max_file_size_bytes: 1047552

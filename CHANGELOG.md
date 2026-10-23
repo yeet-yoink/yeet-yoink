@@ -9,6 +9,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - The `/yeet` endpoint now supports the optional `?file_name=...` parameter for specifying
   the original file name as metadata to be returned with `/yoink`.
+- Memcached backends accept a `max_file_size_bytes` setting. Files above the limit are
+  not sent to that backend; it defaults to just under Memcached's 1 MiB item limit
+  ([#59](https://github.com/yeet-yoink/yeet-yoink/issues/59)).
 
 ## [0.0.1] - 2023-06-25
 
