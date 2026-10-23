@@ -9,11 +9,11 @@ use backend_traits::{
 };
 use bytes::Bytes;
 use file_distribution::protobuf::ItemMetadata;
-use file_distribution::{FileProvider, GetFile, WriteSummary};
+use file_distribution::{BoxedFileReader, FileProvider, GetFile, WriteSummary};
 use futures::{Stream, stream};
 use map_ok::{BoxOk, MapOk};
 use redis::aio::{ConnectionManager, ConnectionManagerConfig};
-use redis::{Client, RedisError};
+use redis::{AsyncCommands, Client, RedisError};
 use shortguid::ShortGuid;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -23,6 +23,12 @@ use tracing::trace;
 
 /// How long a single connection attempt may take.
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(1);
+
+/// The size of the chunks in which files are written.
+const WRITE_CHUNK_SIZE: usize = 1024 * 1024;
+
+/// How long a partially written file is kept should its upload be abandoned.
+const UPLOAD_EXPIRATION: Duration = Duration::from_secs(3600);
 
 /// The size of the ranges in which stored files are read back.
 const READ_CHUNK_SIZE: u64 = 1024 * 1024;
@@ -111,12 +117,6 @@ impl DistributeFile for ValkeyBackend {
         summary: Arc<WriteSummary>,
         file_provider: FileProvider,
     ) -> Result<(), DistributionError> {
-        // The backend registry skips files above max_file_size(), so the
-        // content can be buffered in memory.
-        let mut file = file_provider.get_file(id).await?;
-        let mut data = Vec::with_capacity(summary.file_size_bytes);
-        file.read_to_end(&mut data).await?;
-
         let expiration = self.expiration_secs;
         let expires_at =
             (expiration != 0).then(|| SystemTime::now() + Duration::from_secs(expiration));
@@ -124,26 +124,68 @@ impl DistributeFile for ValkeyBackend {
             .serialize_to_proto()
             .map_err(|e| DistributionError::BackendSpecific(Box::new(e)))?;
 
-        // Store data and metadata together so that readers never see metadata
-        // without its data.
+        // The content is written in chunks to a temporary key, so that readers
+        // never see a partial value. The key expires on its own should the
+        // upload be abandoned.
+        let file = file_provider.get_file(id).await?;
+        let temporary_key = format!("upload-{id}-{}", ShortGuid::new_random());
+        let mut connection = self.connection.clone();
+        if let Err(e) = upload_in_chunks(&mut connection, &temporary_key, file).await {
+            let _: Result<(), _> = connection.del(&temporary_key).await;
+            return Err(match e {
+                UploadError::Read(e) => DistributionError::Io(e),
+                UploadError::Valkey(e) => DistributionError::BackendSpecific(Box::new(e)),
+            });
+        }
+
+        // Move the content into place and store the metadata in one step, so
+        // that readers never see metadata without its data.
         let mut pipe = redis::pipe();
         pipe.atomic();
+        pipe.rename(&temporary_key, data_key(id)).ignore();
         if expiration == 0 {
-            pipe.set(data_key(id), data).ignore();
+            pipe.persist(data_key(id)).ignore();
             pipe.set(meta_key(id), metadata.as_ref()).ignore();
         } else {
-            pipe.set_ex(data_key(id), data, expiration).ignore();
+            pipe.expire(data_key(id), expiration as i64).ignore();
             pipe.set_ex(meta_key(id), metadata.as_ref(), expiration)
                 .ignore();
         }
-
-        let mut connection = self.connection.clone();
         pipe.query_async::<()>(&mut connection)
             .await
             .map_err(|e| DistributionError::BackendSpecific(Box::new(e)))?;
         trace!(file_id = %id, "Stored file {id} in valkey with expiration {expiration}");
         Ok(())
     }
+}
+
+/// Writes a file to a key in chunks of [`WRITE_CHUNK_SIZE`] bytes.
+async fn upload_in_chunks(
+    connection: &mut ConnectionManager,
+    key: &str,
+    mut file: BoxedFileReader,
+) -> Result<(), UploadError> {
+    // The first chunk creates the key with its expiry; APPEND keeps it.
+    let _: () = connection
+        .set_ex(key, &b""[..], UPLOAD_EXPIRATION.as_secs())
+        .await?;
+    let mut chunk = vec![0; WRITE_CHUNK_SIZE];
+    loop {
+        let read = file.read(&mut chunk).await?;
+        if read == 0 {
+            return Ok(());
+        }
+        let _: u64 = connection.append(key, &chunk[..read]).await?;
+    }
+}
+
+/// An error while writing a file in chunks.
+#[derive(Debug, thiserror::Error)]
+enum UploadError {
+    #[error(transparent)]
+    Read(#[from] std::io::Error),
+    #[error(transparent)]
+    Valkey(#[from] RedisError),
 }
 
 #[async_trait]

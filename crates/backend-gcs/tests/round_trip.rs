@@ -11,6 +11,7 @@ use backbone::{Backbone, CompletionMode, FileAccessorBridge};
 use backend_gcs::{GcsBackend, METADATA_ATTRIBUTE};
 use backend_traits::{DistributeFile, DistributionError, FetchError, FetchFile, FetchedFile};
 use file_distribution::{FileHashes, FileProvider, WriteSummary};
+use futures::StreamExt;
 use object_store::memory::InMemory;
 use object_store::path::Path;
 use object_store::{Attribute, Attributes, ObjectStore, ObjectStoreExt, PutOptions, PutPayload};
@@ -316,4 +317,46 @@ async fn emulator_unknown_file_is_not_found() {
         .await
         .expect("Failed to fetch");
     assert!(file.is_none());
+}
+
+/// Files above the multipart threshold are uploaded in parts, keeping their
+/// metadata and content type.
+#[tokio::test]
+async fn large_file_is_uploaded_in_parts() {
+    let (backend, store) = in_memory(&config(Some(60)));
+    let id = ShortGuid::new_random();
+    let data: Vec<u8> = (0..10 * 1024 * 1024u32).map(|i| (i % 251) as u8).collect();
+    let (provider, summary) = buffered_file(id, &data).await;
+
+    backend
+        .distribute_file(id, summary.clone(), provider)
+        .await
+        .expect("Failed to distribute");
+
+    let object = store
+        .get(&Path::from(format!("files/{id}")))
+        .await
+        .expect("Object not stored");
+    assert_eq!(object.meta.size, data.len() as u64);
+    assert_eq!(
+        object
+            .attributes
+            .get(&Attribute::ContentType)
+            .map(AsRef::as_ref),
+        Some("text/plain")
+    );
+
+    let file = backend
+        .fetch_file(id)
+        .await
+        .expect("Failed to fetch")
+        .expect("File not found");
+    let (file, fetched) = read_content(file).await;
+    assert!(fetched == data, "Content differs");
+    assert_eq!(file.hashes, summary.hashes);
+    assert_eq!(file.file_name.as_deref(), Some("hello.txt"));
+
+    // Only the completed object exists; no stray parts are left behind.
+    let objects: Vec<_> = store.list(None).collect::<Vec<_>>().await;
+    assert_eq!(objects.len(), 1);
 }

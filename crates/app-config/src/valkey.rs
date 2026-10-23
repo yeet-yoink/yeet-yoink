@@ -10,8 +10,8 @@ pub const DEFAULT_EXPIRATION: Duration = Duration::from_secs(3600);
 /// The default largest file size accepted by a Valkey backend, in bytes.
 ///
 /// This matches Valkey's default limit for a single value of 512 MiB
-/// (`proto-max-bulk-len`). Fetches are streamed, but storing a file sends it
-/// as one value, so a lower limit keeps memory use down.
+/// (`proto-max-bulk-len`). Files are written and read in chunks, so the limit
+/// does not bound memory use.
 pub const DEFAULT_MAX_FILE_SIZE_BYTES: u64 = 512 * 1024 * 1024;
 
 /// The Valkey-specific configuration.

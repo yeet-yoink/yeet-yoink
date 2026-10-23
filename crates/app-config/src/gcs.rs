@@ -6,12 +6,6 @@ use url::Url;
 /// The default expiration time for objects stored in Google Cloud Storage.
 pub const DEFAULT_EXPIRATION: Duration = Duration::from_secs(24 * 3600);
 
-/// The default largest file size accepted by a Google Cloud Storage backend, in bytes.
-///
-/// Uploads are buffered in memory, so this stays well below what Cloud Storage
-/// itself accepts. Fetches are streamed and need no such limit.
-pub const DEFAULT_MAX_FILE_SIZE_BYTES: u64 = 64 * 1024 * 1024;
-
 /// The Google Cloud Storage-specific configuration.
 ///
 /// Cloud Storage has no per-object expiry. The expiry is recorded with each
@@ -43,8 +37,8 @@ pub struct GcsBackendConfig {
     /// Use `0` to keep it indefinitely. Defaults to [`DEFAULT_EXPIRATION`].
     pub expiration_sec: Option<u32>,
     /// The largest file size, in bytes, to store in this backend. Larger files
-    /// are not distributed to it. Use `0` to disable the limit. Defaults to
-    /// [`DEFAULT_MAX_FILE_SIZE_BYTES`].
+    /// are not distributed to it. Files are streamed in both directions, so
+    /// there is no limit by default; `0` also means no limit.
     pub max_file_size_bytes: Option<u64>,
     /// The priority of this backend. Backends with a higher priority are fetched
     /// from first and have their distributions started first. Defaults to `0`.

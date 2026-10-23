@@ -346,3 +346,26 @@ async fn value_changing_while_read_ends_short() {
 
     assert!((fetched.len() as u64) < file.size.expect("Missing size"));
 }
+
+/// Files are written to a temporary key and renamed into place; nothing is
+/// left behind once the upload completes.
+#[tokio::test]
+async fn upload_leaves_no_temporary_key() {
+    let Some(backend) = backend(Some(60)) else {
+        return;
+    };
+    let id = ShortGuid::new_random();
+    let (provider, summary) = buffered_file(id, &vec![b'x'; 2_500_000]).await;
+
+    backend
+        .distribute_file(id, summary, provider)
+        .await
+        .expect("Failed to distribute");
+
+    let leftovers: Vec<String> = redis::cmd("KEYS")
+        .arg(format!("upload-{id}-*"))
+        .query_async(&mut raw_connection().await)
+        .await
+        .expect("Failed to list keys");
+    assert!(leftovers.is_empty(), "Left behind: {leftovers:?}");
+}
