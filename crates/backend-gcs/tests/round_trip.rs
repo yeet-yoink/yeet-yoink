@@ -360,3 +360,79 @@ async fn large_file_is_uploaded_in_parts() {
     let objects: Vec<_> = store.list(None).collect::<Vec<_>>().await;
     assert_eq!(objects.len(), 1);
 }
+
+/// A local file that breaks off after a number of bytes.
+struct BrokenFile {
+    remaining: usize,
+}
+
+impl tokio::io::AsyncRead for BrokenFile {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        if self.remaining == 0 {
+            return std::task::Poll::Ready(Err(std::io::ErrorKind::UnexpectedEof.into()));
+        }
+        let count = buf.remaining().min(self.remaining);
+        buf.put_slice(&vec![b'x'; count]);
+        self.remaining -= count;
+        std::task::Poll::Ready(Ok(()))
+    }
+}
+
+impl file_distribution::FileReaderTrait for BrokenFile {
+    fn summary(&self) -> &Option<Arc<WriteSummary>> {
+        &None
+    }
+    fn expiration_date(&self) -> tokio::time::Instant {
+        tokio::time::Instant::now()
+    }
+    fn file_size(&self) -> shared_files::FileSize {
+        shared_files::FileSize::AtLeast(0)
+    }
+    fn file_age(&self) -> Duration {
+        Duration::ZERO
+    }
+    fn content_type(&self) -> Option<std::borrow::Cow<'_, str>> {
+        None
+    }
+}
+
+/// Provides a file that breaks off after 9 MiB.
+struct BrokenProvider;
+
+#[async_trait::async_trait]
+impl file_distribution::GetFile for BrokenProvider {
+    async fn get_file(
+        &self,
+        _id: ShortGuid,
+    ) -> Result<file_distribution::BoxedFileReader, file_distribution::FileAccessorError> {
+        Ok(file_distribution::BoxedFileReader::new(BrokenFile {
+            remaining: 9 * 1024 * 1024,
+        }))
+    }
+}
+
+/// A multipart upload that fails partway is aborted and leaves no object.
+#[tokio::test]
+async fn failed_multipart_upload_is_aborted() {
+    let (backend, store) = in_memory(&config(Some(60)));
+    let id = ShortGuid::new_random();
+    let summary = Arc::new(WriteSummary {
+        expires: tokio::time::Instant::now() + Duration::from_secs(60),
+        hashes: FileHashes::of(b""),
+        file_name: None,
+        content_type: None,
+        file_size_bytes: 10 * 1024 * 1024,
+    });
+
+    let result = backend
+        .distribute_file(id, summary, FileProvider::wrap(Arc::new(BrokenProvider)))
+        .await;
+
+    assert!(matches!(result, Err(DistributionError::Io(_))));
+    let objects: Vec<_> = store.list(None).collect::<Vec<_>>().await;
+    assert!(objects.is_empty(), "Left behind: {objects:?}");
+}
