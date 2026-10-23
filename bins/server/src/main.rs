@@ -22,6 +22,8 @@ use tracing::{debug, error, info, warn};
 use crate::backend_registry::{BackendFetcher, BackendRegistry};
 #[cfg(feature = "memcache")]
 use backend_memcache::MemcacheBackend;
+#[cfg(feature = "valkey")]
+use backend_valkey::ValkeyBackend;
 use file_distribution::FileProvider;
 
 mod backend_registry;
@@ -84,6 +86,13 @@ async fn main() -> ExitCode {
     //       avoid having the service fail at runtime if Memcached becomes unresponsive.
     #[cfg(feature = "memcache")]
     let registry = match registry.add_backends::<MemcacheBackend>(&cfg) {
+        Ok(registry) => registry,
+        Err(_) => return ExitCode::FAILURE,
+    };
+
+    // Valkey backends connect lazily on first use and reconnect on failure.
+    #[cfg(feature = "valkey")]
+    let registry = match registry.add_backends::<ValkeyBackend>(&cfg) {
         Ok(registry) => registry,
         Err(_) => return ExitCode::FAILURE,
     };

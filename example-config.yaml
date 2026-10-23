@@ -9,3 +9,10 @@ backends:
       max_file_size_bytes: 1047552
       # Higher priorities are fetched from first; defaults to 0.
       priority: 10
+  valkey:
+    - tag: "valkey-1"
+      # Credentials go into the URL, e.g. valkey://user:password@host:6379/0
+      connection_string: "valkey://127.0.0.1:6379/0"
+      expiration_sec: 3600
+      # Valkey accepts values up to 512 MiB by default; fetched files are held in memory.
+      max_file_size_bytes: 67108864

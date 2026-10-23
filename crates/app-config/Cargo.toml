@@ -5,6 +5,7 @@ edition = "2024"
 
 [features]
 memcache = []
+valkey = []
 
 [dependencies]
 clap = "4.6.7"

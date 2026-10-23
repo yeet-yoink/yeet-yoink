@@ -1,0 +1,236 @@
+use app_config::{
+    AppConfig,
+    valkey::{DEFAULT_EXPIRATION, DEFAULT_MAX_FILE_SIZE_BYTES, ValkeyBackendConfig},
+};
+use async_trait::async_trait;
+use backend_traits::{
+    Backend, BackendInfo, DistributeFile, DistributionError, FetchError, FetchFile, FetchedFile,
+    TryCreateFromConfig,
+};
+use bytes::Bytes;
+use file_distribution::protobuf::ItemMetadata;
+use file_distribution::{FileProvider, GetFile, WriteSummary};
+use map_ok::{BoxOk, MapOk};
+use redis::aio::{ConnectionManager, ConnectionManagerConfig};
+use redis::{Client, RedisError};
+use shortguid::ShortGuid;
+use std::sync::Arc;
+use std::time::{Duration, SystemTime};
+use tokio::io::AsyncReadExt;
+use tracing::trace;
+
+/// How long a single connection attempt may take.
+const CONNECTION_TIMEOUT: Duration = Duration::from_secs(1);
+
+/// How often a failed connection attempt is retried within one request.
+///
+/// Requests fail fast while Valkey is unreachable so that fetches fall through
+/// to the next backend quickly; later requests reconnect on their own.
+const CONNECTION_RETRIES: usize = 1;
+
+pub struct ValkeyBackend {
+    /// The tag identifying the backend.
+    tag: String,
+    /// The connection, established lazily and re-established on failure.
+    connection: ConnectionManager,
+    /// The expiration time for stored entries, or `0` to keep them indefinitely.
+    expiration_secs: u64,
+    /// The largest file size accepted for storage, or `None` for no limit.
+    max_file_size: Option<u64>,
+    /// The priority of this backend relative to others.
+    priority: i32,
+}
+
+impl ValkeyBackend {
+    /// Creates the backend without connecting; the connection is established
+    /// on first use.
+    pub fn try_new(config: &ValkeyBackendConfig) -> Result<Self, ValkeyBackendConstructionError> {
+        let client = Client::open(config.connection_string.as_str())
+            .map_err(ValkeyBackendConstructionError::InvalidConnectionString)?;
+        let connection = client
+            .get_connection_manager_lazy(
+                ConnectionManagerConfig::new()
+                    .set_connection_timeout(Some(CONNECTION_TIMEOUT))
+                    .set_number_of_retries(CONNECTION_RETRIES),
+            )
+            .map_err(ValkeyBackendConstructionError::FailedToCreateConnection)?;
+
+        let expiration_secs = config
+            .expiration_sec
+            .map_or(DEFAULT_EXPIRATION, |secs| Duration::from_secs(secs.into()))
+            .as_secs();
+
+        // A limit of 0 disables the size check.
+        let max_file_size = Some(
+            config
+                .max_file_size_bytes
+                .unwrap_or(DEFAULT_MAX_FILE_SIZE_BYTES),
+        )
+        .filter(|&max| max != 0);
+
+        Ok(Self {
+            tag: config.tag.clone(),
+            connection,
+            expiration_secs,
+            max_file_size,
+            priority: config.priority,
+        })
+    }
+}
+
+fn data_key(id: ShortGuid) -> String {
+    format!("data-{id}")
+}
+
+fn meta_key(id: ShortGuid) -> String {
+    format!("meta-{id}")
+}
+
+#[async_trait]
+impl DistributeFile for ValkeyBackend {
+    fn tag(&self) -> &str {
+        &self.tag
+    }
+
+    fn priority(&self) -> i32 {
+        self.priority
+    }
+
+    fn max_file_size(&self) -> Option<u64> {
+        self.max_file_size
+    }
+
+    async fn distribute_file(
+        &self,
+        id: ShortGuid,
+        summary: Arc<WriteSummary>,
+        file_provider: FileProvider,
+    ) -> Result<(), DistributionError> {
+        // The backend registry skips files above max_file_size(), so the
+        // content can be buffered in memory.
+        let mut file = file_provider.get_file(id).await?;
+        let mut data = Vec::with_capacity(summary.file_size_bytes);
+        file.read_to_end(&mut data).await?;
+
+        let expiration = self.expiration_secs;
+        let expires_at =
+            (expiration != 0).then(|| SystemTime::now() + Duration::from_secs(expiration));
+        let metadata = ItemMetadata::new(id, &summary, expires_at)
+            .serialize_to_proto()
+            .map_err(|e| DistributionError::BackendSpecific(Box::new(e)))?;
+
+        // Store data and metadata together so that readers never see metadata
+        // without its data.
+        let mut pipe = redis::pipe();
+        pipe.atomic();
+        if expiration == 0 {
+            pipe.set(data_key(id), data).ignore();
+            pipe.set(meta_key(id), metadata.as_ref()).ignore();
+        } else {
+            pipe.set_ex(data_key(id), data, expiration).ignore();
+            pipe.set_ex(meta_key(id), metadata.as_ref(), expiration)
+                .ignore();
+        }
+
+        let mut connection = self.connection.clone();
+        pipe.query_async::<()>(&mut connection)
+            .await
+            .map_err(|e| DistributionError::BackendSpecific(Box::new(e)))?;
+        trace!(file_id = %id, "Stored file {id} in valkey with expiration {expiration}");
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl FetchFile for ValkeyBackend {
+    async fn fetch_file(&self, id: ShortGuid) -> Result<Option<FetchedFile>, FetchError> {
+        let mut connection = self.connection.clone();
+        let (metadata, data): (Option<Vec<u8>>, Option<Vec<u8>>) = redis::cmd("MGET")
+            .arg(meta_key(id))
+            .arg(data_key(id))
+            .query_async(&mut connection)
+            .await
+            .map_err(|e: RedisError| FetchError::BackendSpecific(Box::new(e)))?;
+
+        let (Some(metadata), Some(data)) = (metadata, data) else {
+            trace!(file_id = %id, "File {id} not found in valkey");
+            return Ok(None);
+        };
+
+        let file = FetchedFile::from_stored(&metadata, Bytes::from(data))?;
+        trace!(file_id = %id, "Fetched file {id} from valkey");
+        Ok(Some(file))
+    }
+}
+
+impl BackendInfo for ValkeyBackend {
+    fn backend_name() -> &'static str {
+        "Valkey"
+    }
+
+    fn backend_version() -> &'static str {
+        env!("CARGO_PKG_VERSION")
+    }
+}
+
+impl TryCreateFromConfig for ValkeyBackend {
+    type Error = ValkeyBackendConstructionError;
+
+    fn try_from_config(config: &AppConfig) -> Result<Vec<Backend>, Self::Error> {
+        config
+            .backends
+            .valkey
+            .iter()
+            .map(ValkeyBackend::try_new)
+            .box_ok()
+            .map_ok(Backend::from)
+            .collect()
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ValkeyBackendConstructionError {
+    #[error("Invalid connection string: {0}")]
+    InvalidConnectionString(RedisError),
+    #[error("Failed to create connection: {0}")]
+    FailedToCreateConnection(RedisError),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config(tag: &str) -> ValkeyBackendConfig {
+        ValkeyBackendConfig {
+            tag: tag.into(),
+            connection_string: "valkey://127.0.0.1:6379"
+                .parse()
+                .expect("Invalid connection string"),
+            ..ValkeyBackendConfig::default()
+        }
+    }
+
+    #[test]
+    fn reports_backend_info() {
+        assert_eq!(ValkeyBackend::backend_name(), "Valkey");
+        assert_eq!(ValkeyBackend::backend_version(), env!("CARGO_PKG_VERSION"));
+    }
+
+    #[tokio::test]
+    async fn creates_one_backend_per_config_without_connecting() {
+        let mut app_config = AppConfig::default();
+        app_config.backends.valkey = vec![config("first"), config("second")];
+
+        let backends = ValkeyBackend::try_from_config(&app_config).expect("Failed to create");
+
+        let tags: Vec<_> = backends.iter().map(|backend| backend.tag()).collect();
+        assert_eq!(tags, ["first", "second"]);
+    }
+
+    #[tokio::test]
+    async fn no_config_creates_no_backends() {
+        let backends =
+            ValkeyBackend::try_from_config(&AppConfig::default()).expect("Failed to create");
+        assert!(backends.is_empty());
+    }
+}
