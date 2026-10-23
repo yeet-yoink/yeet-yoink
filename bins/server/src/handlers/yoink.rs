@@ -279,66 +279,24 @@ mod tests {
 #[cfg(test)]
 mod endpoint_tests {
     use super::*;
-    use crate::backend_registry::BackendFetcher;
     use crate::system_time_as_rfc1123;
-    use crate::test_support::FakeFile;
-    use crate::test_support::{FakeBackend, fetched_file};
+    use crate::test_support::{FakeFile, TestApp, fetched_file, send, test_app};
     use axum::http::Request;
-    use backbone::{Backbone, CompletionMode};
-    use backend_traits::Backend;
+    use backbone::CompletionMode;
     use bytes::Bytes;
-    use rendezvous::Rendezvous;
-    use std::sync::Arc;
-    use std::time::Duration;
-    use tokio::sync::{broadcast, mpsc};
-    use tower::ServiceExt;
 
-    struct Fixture {
-        state: AppState,
-        backend: FakeBackend,
-        _backend_receiver: mpsc::Receiver<backend_traits::BackendCommand>,
-    }
+    type Fixture = TestApp;
 
     fn fixture(near_cache: bool) -> Fixture {
-        let (sender, backend_receiver) = mpsc::channel(16);
-        let rendezvous = Rendezvous::new();
-        let backbone = Backbone::new(
-            sender.into(),
-            rendezvous.fork_guard(),
-            Duration::from_secs(3600),
-        );
-
-        // Dropping a Rendezvous blocks until all guards complete.
-        std::mem::forget(rendezvous);
-
-        let backend = FakeBackend::default();
-        let state = AppState {
-            shutdown_tx: broadcast::channel(1).0,
-            backbone: Arc::new(backbone),
-            backends: BackendFetcher::new(Arc::new(vec![Backend::wrap(backend.clone())])),
-            near_cache,
-        };
-        Fixture {
-            state,
-            backend,
-            _backend_receiver: backend_receiver,
-        }
+        test_app(near_cache)
     }
 
     async fn yoink(state: &AppState, id: ShortGuid) -> (StatusCode, HeaderMapSnapshot, Bytes) {
         let request = Request::get(format!("/yoink/{id}"))
             .body(Body::empty())
             .expect("Invalid request");
-        let response = crate::router(state.clone())
-            .oneshot(request)
-            .await
-            .expect("Request failed");
-        let status = response.status();
-        let headers = HeaderMapSnapshot(response.headers().clone());
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("Failed to read body");
-        (status, headers, body)
+        let (status, headers, body) = send(state, request).await;
+        (status, HeaderMapSnapshot(headers), body)
     }
 
     struct HeaderMapSnapshot(axum::http::HeaderMap);

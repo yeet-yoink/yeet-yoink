@@ -1,15 +1,25 @@
 //! Test doubles shared by the server's unit tests.
 
+use crate::AppState;
+use crate::backend_registry::BackendFetcher;
 use async_trait::async_trait;
+use axum::body::Body;
+use axum::http::{HeaderMap, Request, StatusCode};
+use backbone::Backbone;
+use backend_traits::{Backend, BackendCommand};
 use backend_traits::{DistributeFile, DistributionError, FetchError, FetchFile, FetchedFile};
 use bytes::Bytes;
 use file_distribution::{FileHashes, FileProvider, WriteSummary};
+use rendezvous::Rendezvous;
 use shortguid::ShortGuid;
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use std::time::SystemTime;
+use tokio::sync::{broadcast, mpsc};
+use tower::ServiceExt;
 
 /// A backend that serves files from memory and counts fetches.
 #[derive(Clone, Default)]
@@ -128,4 +138,53 @@ pub fn fetched_file(data: &'static [u8]) -> FakeFile {
         data: Bytes::from_static(data),
         expires_at: None,
     }
+}
+
+/// The application state wired to a single [`FakeBackend`], as the server sets
+/// it up.
+pub struct TestApp {
+    pub state: AppState,
+    pub backend: FakeBackend,
+    _backend_receiver: mpsc::Receiver<BackendCommand>,
+}
+
+/// Creates the application state with a fresh backbone and one fake backend.
+pub fn test_app(near_cache: bool) -> TestApp {
+    let (sender, backend_receiver) = mpsc::channel(16);
+    let rendezvous = Rendezvous::new();
+    let backbone = Backbone::new(
+        sender.into(),
+        rendezvous.fork_guard(),
+        Duration::from_secs(3600),
+    );
+
+    // Dropping a Rendezvous blocks until all guards complete.
+    std::mem::forget(rendezvous);
+
+    let backend = FakeBackend::default();
+    let state = AppState {
+        shutdown_tx: broadcast::channel(1).0,
+        backbone: Arc::new(backbone),
+        backends: BackendFetcher::new(Arc::new(vec![Backend::wrap(backend.clone())])),
+        near_cache,
+    };
+    TestApp {
+        state,
+        backend,
+        _backend_receiver: backend_receiver,
+    }
+}
+
+/// Sends a request through the router and collects the response.
+pub async fn send(state: &AppState, request: Request<Body>) -> (StatusCode, HeaderMap, Bytes) {
+    let response = crate::router(state.clone())
+        .oneshot(request)
+        .await
+        .expect("Request failed");
+    let status = response.status();
+    let headers = response.headers().clone();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("Failed to read body");
+    (status, headers, body)
 }

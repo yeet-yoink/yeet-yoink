@@ -918,7 +918,7 @@ mod tests {
             .await
             .expect_err("Write should have failed");
 
-        assert_eq!(error.kind(), std::io::ErrorKind::UnexpectedEof);
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
 
         // The rejected chunk was written but never synced; dropping the writer must
         // neither panic nor keep the file around.

@@ -12,4 +12,4 @@ mod file_writer_guard;
 pub use backbone::{Backbone, CacheFileError, NewFileError};
 pub use file_accessor::FileAccessorBridge;
 pub use file_reader::FileReader;
-pub use file_writer::CompletionMode;
+pub use file_writer::{CompletionMode, FinalizationError};
