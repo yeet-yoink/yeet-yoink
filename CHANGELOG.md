@@ -39,9 +39,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with a shared secret (AES-256-GCM, key derived with HKDF-SHA256). Settings can be overridden
   by `YY_`-prefixed environment variables, e.g. from the Downward API. See
   `deploy/kubernetes/cluster.yaml` ([#9](https://github.com/yeet-yoink/yeet-yoink/issues/9)).
+- A container image (`Dockerfile`): a distroless, non-root image that runs with a read-only root
+  filesystem. Release tags publish it to `ghcr.io/yeet-yoink/yeet-yoink` with provenance and an
+  SBOM.
 
 ### Changed
 
+- The server starts without a configuration file, buffering files locally only.
+- GitHub Actions are pinned to commit SHAs with minimal permissions, and `actionlint` and
+  `zizmor` check the workflows on every change.
 - The `backends.memcache` section is now optional, so Valkey-only configurations are valid.
 - Files fetched from Valkey and Google Cloud Storage are streamed into the local buffer and
   checked against their hashes there, instead of being read into memory first. `/yoink`

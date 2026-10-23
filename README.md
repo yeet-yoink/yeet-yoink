@@ -100,6 +100,19 @@ Gossip is encrypted and authenticated with a shared secret; instances without it
 * [`deploy/kubernetes/cluster.yaml`](deploy/kubernetes/cluster.yaml) shows a complete setup,
   including the Downward API variables for the pod IP and name and a NetworkPolicy.
 
+## Container image
+
+Release tags (`v*`) publish an image to `ghcr.io/yeet-yoink/yeet-yoink`, with provenance and an
+SBOM attached. It is based on distroless, runs as an unprivileged user and works with a read-only
+root filesystem, as long as `/tmp`, where files are buffered, is writable:
+
+```shell
+docker build -t yeet-yoink .
+docker run --rm -p 8080:8080 --read-only --tmpfs /tmp yeet-yoink
+```
+
+Without a configuration file, files are only buffered locally; pass one with `--config`.
+
 ## Example run
 
 ```shell

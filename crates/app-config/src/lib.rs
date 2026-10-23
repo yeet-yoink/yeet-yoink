@@ -26,11 +26,14 @@ use tracing::{error, info};
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct AppConfig {
     /// The version of the configuration.
+    #[serde(default)]
     version: u8,
     /// The local cache configuration.
     #[serde(default)]
     pub cache: CacheConfig,
-    /// The backend-specific configuration.
+    /// The backend-specific configuration. Without any backends, files are
+    /// only buffered locally.
+    #[serde(default)]
     pub backends: BackendsConfig,
     /// Finding and gossiping with other instances; disabled when absent.
     #[serde(default)]
@@ -338,6 +341,16 @@ mod tests {
             ]
         );
         assert_eq!(cluster.secret_file, PathBuf::from("/etc/yy/secret"));
+    }
+
+    #[test]
+    fn empty_configuration_is_valid() {
+        let config: AppConfig = ConfigBuilder::<DefaultState>::default()
+            .build()
+            .and_then(|config| config.try_deserialize())
+            .expect("Failed to load an empty configuration");
+        assert!(config.cluster.is_none());
+        assert_eq!(config.cache.lease_duration(), Duration::from_secs(300));
     }
 
     #[test]
