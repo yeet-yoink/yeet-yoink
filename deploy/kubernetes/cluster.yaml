@@ -59,10 +59,22 @@ spec:
       labels:
         app.kubernetes.io/name: yeet-yoink
     spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: yeet-yoink
-          image: yeet-yoink:latest
+          # Published by .github/workflows/container.yml; pin a release tag or digest.
+          image: ghcr.io/yeet-yoink/yeet-yoink:latest
           args: ["--config", "/etc/yeet-yoink/config.yaml", "--http", "0.0.0.0:8080"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+          livenessProbe:
+            httpGet: { path: /livez, port: http }
           ports:
             - name: http
               containerPort: 8080
@@ -82,6 +94,9 @@ spec:
             - name: YY_CLUSTER__NODE_NAME
               valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
           volumeMounts:
+            # Uploaded and fetched files are buffered here.
+            - name: buffer
+              mountPath: /tmp
             - name: config
               mountPath: /etc/yeet-yoink/config.yaml
               subPath: config.yaml
@@ -89,6 +104,8 @@ spec:
               mountPath: /etc/yeet-yoink/gossip
               readOnly: true
       volumes:
+        - name: buffer
+          emptyDir: {}
         - name: config
           configMap: { name: yeet-yoink }
         - name: gossip-secret

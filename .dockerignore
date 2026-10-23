@@ -1,0 +1,10 @@
+# Only the sources are needed to build the image.
+target/
+.git/
+.github/
+.idea/
+deploy/
+docker/
+docs/
+*.log
+.env
