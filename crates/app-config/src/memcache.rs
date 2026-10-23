@@ -52,6 +52,18 @@ pub struct MemcacheBackendConfig {
     /// 8387584
     /// ```
     pub max_file_size_bytes: Option<u64>,
+    /// The priority of this backend. Backends with a higher priority are fetched
+    /// from first and have their distributions started first. Defaults to `0`.
+    ///
+    /// ### Example
+    ///
+    /// To prefer this backend over backends with the default priority:
+    ///
+    /// ```text
+    /// 10
+    /// ```
+    #[serde(default)]
+    pub priority: i32,
 }
 
 /// A Memcached connection string.
@@ -153,19 +165,22 @@ mod tests {
         );
         assert_eq!(config.expiration_sec, Some(500));
         assert_eq!(config.max_file_size_bytes, None);
+        assert_eq!(config.priority, 0);
     }
 
     #[test]
-    fn deserialize_memcache_config_reads_max_file_size() {
+    fn deserialize_memcache_config_reads_optional_settings() {
         let yaml = r#"
             tag: memcache-1
             connection_string: "memcache://127.0.0.1:12345"
             max_file_size_bytes: 8387584
+            priority: -5
         "#;
 
         let config: MemcacheBackendConfig =
             serde_yaml::from_str(yaml).expect("Failed to deserialize Memcache config");
         assert_eq!(config.max_file_size_bytes, Some(8 * 1024 * 1024 - 1024));
+        assert_eq!(config.priority, -5);
     }
 
     #[test]

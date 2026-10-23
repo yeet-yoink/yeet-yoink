@@ -12,6 +12,13 @@ pub trait DistributeFile: Send + Sync {
     /// Gets the tag of the backend.
     fn tag(&self) -> &str;
 
+    /// Gets the priority of the backend. Backends with a higher priority are
+    /// fetched from first and have their distributions started first; backends
+    /// with equal priority keep their registration order.
+    fn priority(&self) -> i32 {
+        0
+    }
+
     /// Gets the largest file size, in bytes, this backend accepts for distribution.
     ///
     /// Files larger than this are not handed to the backend. `None` means no limit.

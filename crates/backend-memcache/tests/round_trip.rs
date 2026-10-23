@@ -30,6 +30,7 @@ fn backend(expiration_sec: Option<u32>) -> Option<MemcacheBackend> {
             .expect("Invalid memcache connection string"),
         expiration_sec,
         max_file_size_bytes: None,
+        priority: 0,
     };
     Some(MemcacheBackend::try_new(&config).expect("Failed to connect to memcached"))
 }

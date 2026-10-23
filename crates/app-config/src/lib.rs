@@ -171,6 +171,7 @@ mod tests {
         assert_eq!(memcache.tag, "memcache-1");
         assert_eq!(memcache.expiration_sec, Some(500));
         assert_eq!(memcache.max_file_size_bytes, Some(1047552));
+        assert_eq!(memcache.priority, 10);
     }
 
     #[test]

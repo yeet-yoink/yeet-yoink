@@ -75,6 +75,10 @@ _Avoid_: TTL, expiration date
 A backend copy whose content matches the hashes in its file metadata. A copy that does not match is **corrupt** and is never served.
 _Avoid_: Valid copy, verified copy
 
+**Backend priority**:
+The rank that decides which storage backend a fetch asks first; lower-ranked backends are only asked when higher-ranked ones have no intact copy.
+_Avoid_: Weight, preference, tier
+
 **Maximum file size**:
 The largest file a storage backend accepts for distribution; larger files are not sent to it.
 _Avoid_: Size cap, quota
