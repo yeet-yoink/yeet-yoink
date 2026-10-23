@@ -393,6 +393,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn registry_orders_backends_by_priority() {
+        use backbone::FileAccessorBridge;
+        use rendezvous::Rendezvous;
+
+        let low = FakeBackend::default();
+        let high = FakeBackend::default().with_priority(10);
+        let id = ShortGuid::new_random();
+        low.insert(id, fetched_file(b"abc"));
+        high.insert(id, fetched_file(b"abc"));
+
+        let rendezvous = Rendezvous::new();
+        let accessor = Arc::new(FileAccessorBridge::default());
+        let registry =
+            BackendRegistry::builder(rendezvous.fork_guard(), FileProvider::wrap(&accessor))
+                .add_backends_from_iter([low.clone(), high.clone()].map(Backend::wrap))
+                .build();
+        // Dropping a Rendezvous blocks until all guards complete.
+        std::mem::forget(rendezvous);
+
+        assert!(registry.fetcher().fetch(id).await.is_some());
+        assert_eq!((high.fetches(), low.fetches()), (1, 0));
+    }
+
+    #[tokio::test]
     async fn fetch_falls_back_to_lower_priority_backends() {
         let high = FakeBackend::default().with_priority(10);
         let low = FakeBackend::default();

@@ -124,3 +124,63 @@ pub enum DistributionError {
     #[error(transparent)]
     Join(#[from] tokio::task::JoinError),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A backend that relies on every default method.
+    struct DefaultBackend;
+
+    #[async_trait]
+    impl DistributeFile for DefaultBackend {
+        fn tag(&self) -> &str {
+            "default"
+        }
+
+        async fn distribute_file(
+            &self,
+            _id: ShortGuid,
+            _summary: Arc<WriteSummary>,
+            _file_provider: FileProvider,
+        ) -> Result<(), DistributionError> {
+            Ok(())
+        }
+    }
+
+    /// A backend with a size limit of 10 bytes.
+    struct LimitedBackend;
+
+    #[async_trait]
+    impl DistributeFile for LimitedBackend {
+        fn tag(&self) -> &str {
+            "limited"
+        }
+
+        fn max_file_size(&self) -> Option<u64> {
+            Some(10)
+        }
+
+        async fn distribute_file(
+            &self,
+            _id: ShortGuid,
+            _summary: Arc<WriteSummary>,
+            _file_provider: FileProvider,
+        ) -> Result<(), DistributionError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn defaults_to_neutral_priority_and_no_size_limit() {
+        assert_eq!(DefaultBackend.priority(), 0);
+        assert_eq!(DefaultBackend.max_file_size(), None);
+        assert!(DefaultBackend.accepts_file_size(u64::MAX));
+    }
+
+    #[test]
+    fn size_limit_is_inclusive() {
+        assert!(LimitedBackend.accepts_file_size(10));
+        assert!(!LimitedBackend.accepts_file_size(11));
+    }
+}

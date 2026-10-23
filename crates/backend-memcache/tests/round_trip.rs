@@ -17,13 +17,13 @@ use tokio::sync::mpsc;
 
 const CONNECTION_STRING_VAR: &str = "YY_TEST_MEMCACHE";
 
-/// Connects to the test instance, or returns `None` if none is configured.
-fn backend(expiration_sec: Option<u32>) -> Option<MemcacheBackend> {
+/// Configures the test instance, or returns `None` if none is configured.
+fn config(expiration_sec: Option<u32>) -> Option<MemcacheBackendConfig> {
     let Ok(connection_string) = std::env::var(CONNECTION_STRING_VAR) else {
         eprintln!("{CONNECTION_STRING_VAR} is not set; skipping memcached test");
         return None;
     };
-    let config = MemcacheBackendConfig {
+    Some(MemcacheBackendConfig {
         tag: "test".into(),
         connection_string: connection_string
             .parse()
@@ -31,7 +31,12 @@ fn backend(expiration_sec: Option<u32>) -> Option<MemcacheBackend> {
         expiration_sec,
         max_file_size_bytes: None,
         priority: 0,
-    };
+    })
+}
+
+/// Connects to the test instance, or returns `None` if none is configured.
+fn backend(expiration_sec: Option<u32>) -> Option<MemcacheBackend> {
+    let config = config(expiration_sec)?;
     Some(MemcacheBackend::try_new(&config).expect("Failed to connect to memcached"))
 }
 
@@ -196,4 +201,18 @@ async fn file_at_the_default_size_limit_fits() {
 
     assert_eq!(file.data.len(), data.len());
     assert!(file.is_intact());
+}
+
+#[tokio::test]
+async fn configured_priority_and_size_limit_are_reported() {
+    let Some(mut config) = config(Some(60)) else {
+        return;
+    };
+    config.priority = 7;
+    config.max_file_size_bytes = Some(0);
+    let backend = MemcacheBackend::try_new(&config).expect("Failed to connect to memcached");
+
+    assert_eq!(backend.priority(), 7);
+    // A limit of 0 disables the size check.
+    assert_eq!(backend.max_file_size(), None);
 }
