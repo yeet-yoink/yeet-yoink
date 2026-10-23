@@ -156,23 +156,9 @@ impl FetchFile for MemcacheBackend {
             return Ok(None);
         };
 
-        let metadata = ItemMetadata::deserialize_from_proto(&metadata)
-            .map_err(|e| FetchError::InvalidMetadata(e.to_string()))?;
-        let hashes = metadata
-            .file_hashes()
-            .ok_or_else(|| FetchError::InvalidMetadata("missing or malformed hashes".into()))?;
-
+        let file = FetchedFile::from_stored(&metadata, Bytes::from(data))?;
         trace!(file_id = %id, "Fetched file {id} from memcache");
-        let expires_at = metadata
-            .expires_at()
-            .map_err(|e| FetchError::InvalidMetadata(e.to_string()))?;
-        Ok(Some(FetchedFile {
-            expires_at,
-            file_name: metadata.file_name,
-            content_type: metadata.content_type,
-            hashes,
-            data: Bytes::from(data),
-        }))
+        Ok(Some(file))
     }
 }
 

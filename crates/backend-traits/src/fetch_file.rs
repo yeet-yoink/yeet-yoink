@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use file_distribution::FileHashes;
 use file_distribution::hash::{HashMd5, HashSha256};
+use file_distribution::protobuf::ItemMetadata;
 use shortguid::ShortGuid;
 use std::error::Error;
 use std::time::SystemTime;
@@ -35,6 +36,28 @@ pub struct FetchedFile {
 }
 
 impl FetchedFile {
+    /// Rebuilds a file from the serialized metadata and the content a backend
+    /// stored on distribution.
+    ///
+    /// The metadata comes from the backend and is validated, not trusted.
+    pub fn from_stored(metadata: &[u8], data: Bytes) -> Result<Self, FetchError> {
+        let metadata = ItemMetadata::deserialize_from_proto(metadata)
+            .map_err(|e| FetchError::InvalidMetadata(e.to_string()))?;
+        let hashes = metadata
+            .file_hashes()
+            .ok_or_else(|| FetchError::InvalidMetadata("missing or malformed hashes".into()))?;
+        let expires_at = metadata
+            .expires_at()
+            .map_err(|e| FetchError::InvalidMetadata(e.to_string()))?;
+        Ok(Self {
+            expires_at,
+            file_name: metadata.file_name,
+            content_type: metadata.content_type,
+            hashes,
+            data,
+        })
+    }
+
     /// Checks whether the backend's copy has expired.
     pub fn is_expired(&self) -> bool {
         self.expires_at
@@ -77,6 +100,49 @@ mod tests {
             data: Bytes::from_static(data),
             expires_at: None,
         }
+    }
+
+    fn stored_metadata(metadata: ItemMetadata) -> Bytes {
+        metadata.serialize_to_proto().expect("Failed to serialize")
+    }
+
+    #[test]
+    fn stored_file_is_rebuilt_from_metadata() {
+        use file_distribution::protobuf::Hashes;
+        use std::time::{Duration, UNIX_EPOCH};
+
+        let expected = fetched(b"abc", b"abc");
+        let metadata = stored_metadata(ItemMetadata {
+            file_name: Some("a.txt".into()),
+            content_type: Some("text/plain".into()),
+            hashes: Some(Hashes {
+                md5: expected.hashes.md5.to_vec(),
+                sha256: expected.hashes.sha256.to_vec(),
+            }),
+            expires_at_unix_ms: Some(1_000),
+            ..ItemMetadata::default()
+        });
+
+        let file = FetchedFile::from_stored(&metadata, Bytes::from_static(b"abc"))
+            .expect("Failed to rebuild file");
+
+        assert_eq!(file.file_name.as_deref(), Some("a.txt"));
+        assert_eq!(file.content_type.as_deref(), Some("text/plain"));
+        assert_eq!(file.expires_at, Some(UNIX_EPOCH + Duration::from_secs(1)));
+        assert!(file.is_intact());
+    }
+
+    #[test]
+    fn stored_file_without_hashes_is_rejected() {
+        let metadata = stored_metadata(ItemMetadata::default());
+        let result = FetchedFile::from_stored(&metadata, Bytes::from_static(b"abc"));
+        assert!(matches!(result, Err(FetchError::InvalidMetadata(_))));
+    }
+
+    #[test]
+    fn undecodable_metadata_is_rejected() {
+        let result = FetchedFile::from_stored(&[0xff, 0xff, 0xff], Bytes::from_static(b"abc"));
+        assert!(matches!(result, Err(FetchError::InvalidMetadata(_))));
     }
 
     #[test]
