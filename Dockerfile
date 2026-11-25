@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Base images are pinned by digest; Dependabot keeps them up to date.
-FROM rust:1.98-bookworm@sha256:93ce27a88655056a51dbdd8f5f2d7ddc071c7b0070fb288a37b5a285fc83971e AS builder
+FROM rust:1.99-bookworm@sha256:e6f2cff35d0f309acf8433b4f05878ed77092602c5065cc81801177da0bb3a9c AS builder
 
 # protoc compiles the metadata schema.
 # hadolint ignore=DL3008
